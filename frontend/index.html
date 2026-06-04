@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ideal Imposition — Sistema de Imposição Gráfica</title>
+    <meta name="description"
+        content="Ideal Imposition — Sistema profissional de imposição gráfica com dados variáveis (VDP): numeração, QR Code, código de barras.">
+    <link rel="stylesheet" href="style.css?v=2">
+</head>
+
+<body>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loading-overlay">
+        <div class="spinner"></div>
+        <p class="loading-text">Gerando PDF...</p>
+        <p class="loading-sub" id="loading-sub">Aguarde enquanto processamos a imposição.</p>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <div class="app-shell">
+
+        <!-- ── Sidebar ─────────────────────────────────────────────────────── -->
+        <aside class="sidebar">
+            <div class="sidebar-logo">
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                    <rect width="32" height="32" rx="8" fill="url(#lg)" />
+                    <rect x="7" y="9" width="8" height="6" rx="1.5" fill="white" opacity="0.9" />
+                    <rect x="17" y="9" width="8" height="6" rx="1.5" fill="white" opacity="0.6" />
+                    <rect x="7" y="17" width="8" height="6" rx="1.5" fill="white" opacity="0.6" />
+                    <rect x="17" y="17" width="8" height="6" rx="1.5" fill="white" opacity="0.9" />
+                    <defs>
+                        <linearGradient id="lg" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+                            <stop stop-color="#3b82f6" />
+                            <stop offset="1" stop-color="#8b5cf6" />
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <div class="sidebar-logo-text">
+                    <strong>Ideal Imposition</strong>
+                    <span>Imposição Gráfica</span>
+                </div>
+            </div>
+
+            <span class="nav-group-label">Configuração</span>
+
+            <button class="nav-btn active" data-view="view-formatos" id="nav-formatos">
+                <span class="nav-icon">📐</span>
+                Formatos
+            </button>
+
+            <button class="nav-btn" data-view="view-lista-formatos" id="nav-lista-formatos">
+                <span class="nav-icon">📋</span>
+                Lista Formatos
+                <span class="nav-badge" id="badge-formatos">0</span>
+            </button>
+
+            <button class="nav-btn" data-view="view-numeracao" id="nav-numeracao">
+                <span class="nav-icon">🔢</span>
+                Numeração
+            </button>
+
+            <button class="nav-btn" data-view="view-catalogo" id="nav-catalogo">
+                <span class="nav-icon">📚</span>
+                Lista de Numerações
+                <span class="nav-badge" id="badge-numeracao">0</span>
+            </button>
+
+            <button class="nav-btn" data-view="view-saidas" id="nav-saidas">
+                <span class="nav-icon">📄</span>
+                Saídas
+                <span class="nav-badge" id="badge-saidas">0</span>
+            </button>
+
+            <span class="nav-group-label" style="margin-top:8px;">Produção</span>
+
+            <button class="nav-btn" data-view="view-imposicao" id="nav-imposicao">
+                <span class="nav-icon">🖨️</span>
+                Imposição
+            </button>
+        </aside>
+
+        <!-- ── Main Content ─────────────────────────────────────────────────── -->
+        <main class="main-content">
+
+            <!-- ══════════════════════════════════════════════════════════════ -->
+            <!-- VIEW: FORMATOS                                                 -->
+            <!-- ══════════════════════════════════════════════════════════════ -->
+            <section id="view-formatos" class="view-section active">
+                <div class="page-header">
+                    <div class="page-header-text">
+                        <h1>📐 Formatos</h1>
+                        <p>Defina o tamanho do item, o modelo de imposição em grade e o espaçamento entre itens.</p>
+                    </div>
+                </div>
+
+                <!-- 1. Card Novo Formato (Dimensões do Item) -->
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title"><span class="icon">📐</span> <span id="fmt-form-title">Novo
+                                Formato</span></span>
+                        <div style="display:flex;gap:8px;">
+                            <button class="btn btn-ghost btn-sm" id="btn-fmt-cancel" style="display:none"
+                                onclick="cancelFmtEdit()">Cancelar</button>
+                            <button class="btn btn-primary btn-sm" id="btn-fmt-save" onclick="saveFmt()">💾
+                                Salvar</button>
+                        </div>
+                    </div>
+                    <input type="hidden" id="fmt-id">
+                    <div class="form-subgrid-dimension">
+                        <div class="form-group col-span-name">
+                            <label>Nome do Formato</label>
+                            <input type="text" class="form-control" id="fmt-name" placeholder="Ex: Ingresso 100×50mm">
+                        </div>
+                        <div class="form-group">
+                            <label>Largura (mm)</label>
+                            <input type="number" class="form-control" id="fmt-w" value="100" min="1" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label>Altura (mm)</label>
+                            <input type="number" class="form-control" id="fmt-h" value="50" min="1" step="0.1">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. Card Elementos (Grade e Espaçamentos) -->
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title"><span class="icon">📋</span> Elementos (Grade de Imposição)</span>
+                    </div>
+                    <div class="form-subgrid-grid">
+                        <div class="form-group">
+                            <label>Colunas</label>
+                            <input type="number" class="form-control" id="fmt-cols" value="2" min="1">
+                        </div>
+                        <div class="form-group">
+                            <label>Linhas</label>
+                            <input type="number" class="form-control" id="fmt-rows" value="5" min="1">
+                        </div>
+                        <div class="form-group">
+                            <label>Gap Horiz. (mm)</label>
+                            <input type="number" class="form-control" id="fmt-gaph" value="3" min="0" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label>Gap Vert. (mm)</label>
+                            <input type="number" class="form-control" id="fmt-gapv" value="2" min="0" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label>Offset H (mm)</label>
+                            <input type="text" class="form-control" id="fmt-offh" value="0" step="0.1"
+                                placeholder="0,0 mm"
+                                title="Deslocamento horizontal da arte. Positivo = direita, Negativo = esquerda.">
+                        </div>
+                        <div class="form-group">
+                            <label>Offset V (mm)</label>
+                            <input type="text" class="form-control" id="fmt-offv" value="0" step="0.1"
+                                placeholder="0,0 mm"
+                                title="Deslocamento vertical da arte. Positivo = para cima, Negativo = para baixo.">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Card Preview da Imposição -->
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">👁️ Preview da Imposição</span>
+                        <span class="badge badge-teal" id="fmt-preview-info">Total: 10 itens</span>
+                    </div>
+                    <div class="preview-canvas-container">
+                        <canvas id="fmt-preview-canvas"></canvas>
+                    </div>
+                </div>
+
+            </section>
+
+            <!-- ══════════════════════════════════════════════════════════════ -->
+            <!-- VIEW: LISTA FORMATOS                                           -->
+            <!-- ══════════════════════════════════════════════════════════════ -->
+            <section id="view-lista-formatos" class="view-section">
+                <div class="page-header">
+                    <div class="page-header-text">
+                        <h1>📋 Lista de Formatos</h1>
+                        <p>Formatos cadastrados disponíveis para edição, exclusão ou duplicação.</p>
+                    </div>
+                </div>
+
+                <!-- Tabela -->
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title"><span class="icon">📋</span> Formatos Cadastrados</span>
+                    </div>
+                    <table class="data-table" id="table-formatos">
+                        <thead>
+                            <tr>
+                                <th>Nome</th>
+                                <th>Tamanho</th>
+                                <th>Grade</th>
+                                <th>Gap H × V</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-formatos"></tbody>
+                    </table>
+                    <div class="empty-state" id="empty-formatos" style="display:none">
+                        <div class="empty-state-icon">📐</div>
+                        <p>Nenhum formato cadastrado ainda.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ══════════════════════════════════════════════════════════════ -->
+            <!-- VIEW: NUMERAÇÃO                                                -->
+            <!-- ══════════════════════════════════════════════════════════════ -->
+            <section id="view-numeracao" class="view-section">
+                <div class="page-header">
+                    <div class="page-header-text">
+                        <h1>🔢 Numeração</h1>
+                        <p>Crie conjuntos de elementos variáveis: numeração, QR Code, código de barras e textos.</p>
+                    </div>
+                </div>
+
+                <!-- Seletor de Formato + Nome -->
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title"><span class="icon">⚙️</span> Configuração da Numeração</span>
+                        <div style="display:flex;gap:8px;">
+                            <button class="btn btn-ghost btn-sm" id="btn-num-cancel" style="display:none"
+                                onclick="cancelNumEdit()">Cancelar</button>
+                            <button class="btn btn-primary btn-sm" id="btn-num-save" onclick="saveNumeracao()">💾 Salvar
+                                Numeração</button>
+                        </div>
+                    </div>
+                    <input type="hidden" id="num-id">
+                    <div class="form-grid form-grid-2">
+                        <div class="form-group">
+                            <label>Nome da Numeração</label>
+                            <input type="text" class="form-control" id="num-name"
+                                placeholder="Ex: Numeração Ingresso VIP">
+                        </div>
+                        <div class="form-group">
+                            <label>Formato Base</label>
+                            <select class="form-control" id="num-formato" onchange="onFormatoSelect()">
+                                <option value="">— Selecione um Formato —</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="divider" style="margin: 16px 0 12px 0;"></div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                        <div class="form-group">
+                            <label>Banco de Dados (CSV)</label>
+                            <div style="display:flex; gap:10px; align-items: center; flex-wrap: wrap;">
+                                <label class="btn btn-sm btn-secondary" for="num-csv-file" style="margin: 0; cursor: pointer;">
+                                    📊 Upload CSV
+                                </label>
+                                <input type="file" id="num-csv-file" accept=".csv" style="display:none">
+                                <button class="btn btn-sm btn-ghost btn-danger" id="btn-remove-num-csv" style="display:none; padding: 4px 8px;" onclick="clearNumCsvFile()">✕ Remover</button>
+                                <span id="num-csv-file-name" style="font-size:0.82rem; color:var(--text-dim)"></span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Desenho Vetorial (SVG)</label>
+                            <div style="display:flex; gap:10px; align-items: center; flex-wrap: wrap;">
+                                <label class="btn btn-sm btn-secondary" for="num-svg-file" style="margin: 0; cursor: pointer;">
+                                    🎨 Upload SVG
+                                </label>
+                                <input type="file" id="num-svg-file" accept=".svg" style="display:none">
+                                <button class="btn btn-sm btn-ghost btn-danger" id="btn-remove-num-svg" style="display:none; padding: 4px 8px;" onclick="clearNumSvgFile()">✕ Remover</button>
+                                <span id="num-svg-file-name" style="font-size:0.82rem; color:var(--text-dim)"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Editor Split: Painel + Canvas -->
+                <div class="numeracao-layout" id="numeracao-editor" style="display:none">
+
+                    <!-- Barra de Elementos (Topo) -->
+                    <div class="top-elements-panel card" style="padding:16px; margin-bottom: 0;">
+                        <div class="card-header" style="margin-bottom:12px; padding-bottom: 8px;">
+                            <span class="card-title" style="font-size:0.85rem;"><span class="icon">🎯</span> Adicionar
+                                Elementos</span>
+                        </div>
+                        <div class="add-elements-bar">
+                            <button class="btn btn-sm btn-secondary" onclick="addElement('TEXT')">🔤 Numeração</button>
+                            <button class="btn btn-sm btn-secondary" onclick="addElement('QR')">📱 QR Code</button>
+                            <button class="btn btn-sm btn-secondary" onclick="addElement('BARCODE')">▌▌ Barcode</button>
+                            <button class="btn btn-sm btn-secondary" onclick="addElement('FIXED')">🔠 Texto Fixo</button>
+                            <button class="btn btn-sm btn-secondary" onclick="addElement('SVG')">🎨 SVG</button>
+                            <button class="btn btn-sm btn-secondary" onclick="addElement('PICOTE')">✂️ Picote</button>
+                        </div>
+                        <div id="num-csv-columns-container" style="display:none; margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 12px;">
+                            <span class="card-title" style="font-size:0.8rem; color:var(--text-dim); margin-bottom:8px; display:block;"><span class="icon">📊</span> Colunas do Banco de Dados (CSV)</span>
+                            <div class="add-elements-bar" id="num-csv-columns-bar">
+                                <!-- Botões dinâmicos de colunas do CSV serão inseridos aqui -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Painel esquerdo (agora Carrossel na Base) -->
+                    <div class="numeracao-panel">
+
+                        <!-- Lista de elementos -->
+                        <div id="elements-list">
+                            <div class="empty-state" id="empty-elements">
+                                <div class="empty-state-icon">🎯</div>
+                                <p>Adicione elementos acima</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Canvas direito -->
+                    <div class="canvas-wrapper">
+                        <div class="canvas-info">
+                            <span id="canvas-dim-label">—</span>
+                            <span>Clique e arraste os elementos</span>
+                            <span id="canvas-scale-label">—</span>
+                        </div>
+                        <div class="canvas-toolbar" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                                <label class="btn btn-sm btn-secondary canvas-bg-label" for="canvas-bg-file" style="margin: 0;">
+                                    🖼️ Arte de Fundo
+                                </label>
+                                <input type="file" id="canvas-bg-file" accept=".pdf,.jpg,.jpeg,.png" style="display:none">
+                                <button class="btn btn-sm btn-ghost" id="btn-remove-bg" style="display:none; padding: 4px 8px;"
+                                    onclick="clearBgImage()">
+                                    ✕ Remover
+                                </button>
+                                <span id="bg-file-name" class="canvas-bg-name"></span>
+                            </div>
+                            
+                            <!-- Ferramentas de Alinhamento Compactas -->
+                            <div class="align-tools-horizontal" style="display: flex; gap: 4px; align-items: center; background: rgba(0,0,0,0.15); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px 8px;">
+                                <span style="font-size: 0.68rem; font-weight: 700; color: var(--text-dim); text-transform: uppercase; margin-right: 6px; user-select: none;">Alinhar:</span>
+                                <button class="btn btn-sm btn-secondary" onclick="alignSelectedElement('left')" title="Alinhar à Esquerda" style="padding: 4px 8px; font-size: 0.8rem;">⬅️</button>
+                                <button class="btn btn-sm btn-secondary" onclick="alignSelectedElement('center-h')" title="Centralizar Horizontal" style="padding: 4px 8px; font-size: 0.8rem;">↔️</button>
+                                <button class="btn btn-sm btn-secondary" onclick="alignSelectedElement('right')" title="Alinhar à Direita" style="padding: 4px 8px; font-size: 0.8rem;">➡️</button>
+                                <div style="width: 1px; background: var(--border); height: 16px; margin: 0 4px;"></div>
+                                <button class="btn btn-sm btn-secondary" id="btn-align-top" onclick="alignSelectedElement('top')" title="Alinhar ao Topo" style="padding: 4px 8px; font-size: 0.8rem;">⬆️</button>
+                                <button class="btn btn-sm btn-secondary" id="btn-align-centerv" onclick="alignSelectedElement('center-v')" title="Centralizar Vertical" style="padding: 4px 8px; font-size: 0.8rem;">↕️</button>
+                                <button class="btn btn-sm btn-secondary" id="btn-align-bottom" onclick="alignSelectedElement('bottom')" title="Alinhar à Base" style="padding: 4px 8px; font-size: 0.8rem;">⬇️</button>
+                            </div>
+                        </div>
+                        <div style="display: flex; width: 100%; justify-content: center; overflow: auto; padding: 8px 0;">
+                            <canvas id="numeracao-canvas"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+            </section>
+
+            <!-- ══════════════════════════════════════════════════════════════ -->
+            <!-- VIEW: CATÁLOGO                                                 -->
+            <!-- ══════════════════════════════════════════════════════════════ -->
+            <section id="view-catalogo" class="view-section">
+                <div class="page-header" style="flex-wrap: wrap;">
+                    <div class="page-header-text">
+                        <h1>📚 Catálogo de Numerações</h1>
+                        <p>Suas numerações cadastradas agrupadas pelo formato base.</p>
+                    </div>
+                    <div style="margin-left: auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <div style="position: relative;">
+                            <input type="text" id="catalogo-search" class="form-control"
+                                placeholder="Buscar por nome..." oninput="renderNumeracoes()"
+                                style="padding-left: 32px; width: 220px;">
+                            <span
+                                style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 0.9rem; opacity: 0.6;">🔍</span>
+                        </div>
+                        <select id="catalogo-filter-format" class="form-control" onchange="renderNumeracoes()"
+                            style="width: 200px;">
+                            <option value="">Todos os Formatos</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="novaNumeracao()">+ Nova Numeração</button>
+                    </div>
+                </div>
+
+                <div id="catalogo-container">
+                    <!-- Grouped numerations will go here -->
+                </div>
+
+                <div class="empty-state" id="empty-catalogo" style="display:none; margin-top:20px;">
+                    <div class="empty-state-icon">📚</div>
+                    <p>Nenhuma numeração cadastrada ainda no catálogo.</p>
+                </div>
+            </section>
+
+            <!-- ══════════════════════════════════════════════════════════════ -->
+            <!-- VIEW: SAÍDAS                                                   -->
+            <!-- ══════════════════════════════════════════════════════════════ -->
+            <section id="view-saidas" class="view-section">
+                <div class="page-header">
+                    <div class="page-header-text">
+                        <h1>📄 Saídas</h1>
+                        <p>Cadastre os formatos de papel (folha de impressão) para geração do arquivo final.</p>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title"><span class="icon">✏️</span> <span id="sai-form-title">Nova
+                                Saída</span></span>
+                        <div style="display:flex;gap:8px;">
+                            <button class="btn btn-ghost btn-sm" id="btn-sai-cancel" style="display:none"
+                                onclick="cancelSaiEdit()">Cancelar</button>
+                            <button class="btn btn-primary btn-sm" id="btn-sai-save" onclick="saveSaida()">💾
+                                Salvar</button>
+                        </div>
+                    </div>
+                    <input type="hidden" id="sai-id">
+
+                    <!-- Presets rápidos -->
+                    <div style="margin-bottom:16px;">
+                        <span style="font-size:0.8rem;color:var(--text-dim);margin-right:8px;">Presets:</span>
+                        <button class="btn btn-sm btn-ghost" onclick="setPreset(450,320)">SRA3 Paisagem</button>
+                        <button class="btn btn-sm btn-ghost" onclick="setPreset(320,450)">SRA3 Retrato</button>
+                        <button class="btn btn-sm btn-ghost" onclick="setPreset(297,420)">A3 Retrato</button>
+                        <button class="btn btn-sm btn-ghost" onclick="setPreset(420,297)">A3 Paisagem</button>
+                        <button class="btn btn-sm btn-ghost" onclick="setPreset(210,297)">A4 Retrato</button>
+                        <button class="btn btn-sm btn-ghost" onclick="setPreset(297,210)">A4 Paisagem</button>
+                    </div>
+
+                    <div class="form-grid" style="grid-template-columns: 2fr 1fr 1fr 1fr;">
+                        <div class="form-group">
+                            <label>Nome</label>
+                            <input type="text" class="form-control" id="sai-name" placeholder="Ex: SRA3 Paisagem">
+                        </div>
+                        <div class="form-group">
+                            <label>Largura (mm)</label>
+                            <input type="number" class="form-control" id="sai-w" value="450" min="1" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label>Altura (mm)</label>
+                            <input type="number" class="form-control" id="sai-h" value="320" min="1" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label>Formato Arquivo</label>
+                            <select class="form-control" id="sai-format">
+                                <option value="pdf">PDF</option>
+                                <option value="jpg">JPG</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title"><span class="icon">📋</span> Saídas Cadastradas</span>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Nome</th>
+                                <th>Tamanho</th>
+                                <th>Formato</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-saidas"></tbody>
+                    </table>
+                    <div class="empty-state" id="empty-saidas" style="display:none">
+                        <div class="empty-state-icon">📄</div>
+                        <p>Nenhuma saída cadastrada ainda.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ══════════════════════════════════════════════════════════════ -->
+            <!-- VIEW: IMPOSIÇÃO                                                -->
+            <!-- ══════════════════════════════════════════════════════════════ -->
+            <section id="view-imposicao" class="view-section" style="max-width: 100%;">
+                <div class="page-header">
+                    <div class="page-header-text">
+                        <h1>🖨️ Imposição</h1>
+                        <p>Selecione o Formato, a Numeração e a Saída, depois envie a arte para gerar o PDF imposto.</p>
+                    </div>
+                </div>
+
+                <!-- Steps bar -->
+                <div class="steps-bar" id="steps-bar">
+                    <div class="step-item active" id="step-1">
+                        <div class="step-num">1</div>
+                        <span>Formato</span>
+                    </div>
+                    <div class="step-item" id="step-2">
+                        <div class="step-num">2</div>
+                        <span>Numeração</span>
+                    </div>
+                    <div class="step-item" id="step-3">
+                        <div class="step-num">3</div>
+                        <span>Saída</span>
+                    </div>
+                    <div class="step-item" id="step-4">
+                        <div class="step-num">4</div>
+                        <span>Arte</span>
+                    </div>
+                </div>
+
+                <div class="imposicao-layout">
+                    <div class="imposicao-config">
+                        <div class="card">
+                            <div class="card-header">
+                                <span class="card-title"><span class="icon">⚙️</span> Configuração da Imposição</span>
+                            </div>
+
+                            <div class="form-grid form-grid-3" style="margin-bottom:20px;">
+                                <div class="form-group">
+                                    <label>1. Formato</label>
+                                    <select class="form-control" id="imp-formato" onchange="updateImpSummary()">
+                                        <option value="">— Selecione —</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>2. Numeração (opcional)</label>
+                                    <select class="form-control" id="imp-numeracao" onchange="updateImpSummary()">
+                                        <option value="">— Sem numeração —</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>3. Saída</label>
+                                    <select class="form-control" id="imp-saida" onchange="updateImpSummary()">
+                                        <option value="">— Selecione —</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-grid form-grid-3" style="margin-bottom:20px;">
+                                <div class="form-group">
+                                    <label>Número Inicial</label>
+                                    <input type="number" class="form-control" id="imp-start" value="1" min="1"
+                                        oninput="updateImpSummary()">
+                                </div>
+                                <div class="form-group">
+                                    <label>Número Final</label>
+                                    <input type="number" class="form-control" id="imp-end" value="100" min="1"
+                                        oninput="updateImpSummary()">
+                                </div>
+                                <div class="form-group">
+                                    <label>Regra de Paginação</label>
+                                    <select class="form-control" id="imp-schema" onchange="updateImpSummary()">
+                                        <option value="sequential">Sequencial</option>
+                                        <option value="cut_stack">Cut &amp; Stack (Blocos)</option>
+                                        <option value="step_repeat">Step &amp; Repeat</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- Sumário -->
+                            <div class="summary-box" id="imp-summary" style="display:none">
+                                <div class="summary-item">
+                                    <span class="summary-label">Formato</span>
+                                    <span class="summary-value" id="sum-formato">—</span>
+                                </div>
+                                <div class="summary-item">
+                                    <span class="summary-label">Grade</span>
+                                    <span class="summary-value" id="sum-grade">—</span>
+                                </div>
+                                <div class="summary-item">
+                                    <span class="summary-label">Total de Itens</span>
+                                    <span class="summary-value" id="sum-total">—</span>
+                                </div>
+                                <div class="summary-item">
+                                    <span class="summary-label">Folhas Estimadas</span>
+                                    <span class="summary-value" id="sum-folhas">—</span>
+                                </div>
+                                <div class="summary-item">
+                                    <span class="summary-label">Saída</span>
+                                    <span class="summary-value" id="sum-saida">—</span>
+                                </div>
+                            </div>
+
+<!-- Upload Arte -->
+                            <div class="file-drop" id="imp-drop-area">
+                                <div class="file-drop-icon">📁</div>
+                                <div class="file-drop-text">
+                                    <strong>Arraste a arte aqui</strong> ou clique para selecionar<br>
+                                    <small style="color:var(--text-faint);font-size:0.8rem;">PDF, JPG ou PNG · A arte
+                                        será centralizada no formato</small>
+                                </div>
+                                <input type="file" id="imp-file" accept=".pdf,.jpg,.jpeg,.png">
+                            </div>
+                            <p id="imp-file-info"
+                                style="text-align:center;color:var(--blue);font-size:0.88rem;margin-top:10px;display:none;">
+                            </p>
+
+                            <div style="margin-top:24px;">
+                                <button class="btn btn-primary btn-full" id="btn-impose" onclick="runImposition()">
+                                    🚀 Gerar PDF de Alta Resolução
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="imposicao-preview">
+                        <div class="card">
+                            <div class="card-header">
+                                <span class="card-title">👁️ Pré-visualização da Folha 1</span>
+                                <span class="badge badge-teal" id="preview-sheet-num">Sem Arte</span>
+                            </div>
+                            <div class="preview-canvas-container">
+                                <canvas id="preview-canvas"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    <script src="firebase-config.js"></script>
+    <script src="script.js?v=2"></script>
+</body>
+
+</html>
