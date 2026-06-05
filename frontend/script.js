@@ -3123,11 +3123,19 @@ function getAmostraFormato() {
     return null;
 }
 
-// Helper para calcular a escala (px/mm) ideal para que todos os canvas tenham o mesmo tamanho
+// Helper para calcular a escala (px/mm) ideal para que todos os canvas tenham o mesmo tamanho e mantenham paridade 1:1 física
 function getAmostraScale(fmt, canvasElement) {
-    if (!fmt || !canvasElement) return 3.5; // Escala padrão
-    const containerW = canvasElement.parentElement.clientWidth - 30; // compensar padding
-    return containerW / fmt.width_mm;
+    // Para manter a paridade 1:1 física absoluta de escala entre todas as 3 janelas fonte e a combinada,
+    // a escala (pixels por milímetro) deve ser uma constante global calculada com base no formato unificado.
+    const activeFmt = getAmostraFormato();
+    if (!activeFmt) return 3.5;
+    
+    // Usamos o container da Amostra Combinada ou o container ativo para definir a escala padrão
+    const refCanvas = document.getElementById('amostra-comb-canvas') || canvasElement;
+    if (!refCanvas) return 3.5;
+    
+    const containerW = refCanvas.parentElement.clientWidth - 30; // compensar padding
+    return containerW / activeFmt.width_mm;
 }
 
 window.onAmostraCorSelect = async function() {
