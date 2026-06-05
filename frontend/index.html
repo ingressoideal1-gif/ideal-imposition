@@ -80,6 +80,11 @@
             <button class="nav-btn" data-view="view-cores" id="nav-cores">
                 <span class="nav-icon">🎨</span>
                 Cores
+            </button>
+
+            <button class="nav-btn" data-view="view-lista-cores" id="nav-lista-cores">
+                <span class="nav-icon">📋</span>
+                Lista Cores
                 <span class="nav-badge" id="badge-cores">0</span>
             </button>
 
@@ -542,9 +547,21 @@
                         </div>
                     </div>
                 </div>
+            </section>
+
+            <!-- ══════════════════════════════════════════════════════════════ -->
+            <!-- VIEW: LISTA CORES                                              -->
+            <!-- ══════════════════════════════════════════════════════════════ -->
+            <section id="view-lista-cores" class="view-section">
+                <div class="page-header">
+                    <div class="page-header-text">
+                        <h1>📋 Lista de Cores</h1>
+                        <p>Visualize as cores cadastradas e seus PDFs de referência correspondentes.</p>
+                    </div>
+                </div>
 
                 <!-- Grid Layout: Tabela de Cores + Visualizador PDF -->
-                <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 20px; align-items: start; margin-top: 20px;">
+                <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 20px; align-items: start;">
                     <!-- Tabela de Cores Cadastradas -->
                     <div class="card" style="margin-bottom: 0;">
                         <div class="card-header">

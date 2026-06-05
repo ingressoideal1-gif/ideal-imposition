@@ -576,6 +576,10 @@ async function saveCor() {
         }
         cancelCorEdit();
         await loadAll();
+        
+        // Redirecionar para a página Listar Cores após salvar
+        const navListaCores = document.getElementById('nav-lista-cores');
+        if (navListaCores) navListaCores.click();
     } catch (e) {
         toast(e.message, 'error');
     }
@@ -585,6 +589,11 @@ window.saveCor = saveCor;
 function editCor(id) {
     const c = state.cores.find(x => x.id === id);
     if (!c) return;
+    
+    // Redirecionar para a página Cores (de cadastro) ao editar
+    const navCores = document.getElementById('nav-cores');
+    if (navCores) navCores.click();
+
     document.getElementById('cor-id').value = c.id;
     document.getElementById('cor-name').value = c.name;
     document.getElementById('cor-formato').value = c.formato_id;
