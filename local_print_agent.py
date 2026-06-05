@@ -8,6 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import print_service
 import ppd_parser
+from engine import ImpositionConfig, ImpositionEngine
+import db
+from fastapi.responses import FileResponse, JSONResponse
 
 app = FastAPI(title="Local Print Agent", description="Agente local para impressão direta e gerenciamento de PPDs.")
 
@@ -101,6 +104,81 @@ async def submit_print_job(
     finally:
         if os.path.exists(pdf_path):
             os.remove(pdf_path)
+
+@app.post("/api/impose")
+async def impose_file(
+    file: UploadFile = File(...),
+    csv_file: UploadFile | None = File(None),
+    payload: str = Form(...)
+):
+    try:
+        import csv
+        import io
+        data = json.loads(payload)
+
+        formato = data.get("formato") or db.get_formato(data.get("formato_id"))
+        saida   = data.get("saida") or db.get_saida(data.get("saida_id"))
+        numeracao = data.get("numeracao") or (db.get_numeracao(data.get("numeracao_id")) if data.get("numeracao_id") else None)
+
+        if not formato:
+            raise HTTPException(status_code=400, detail="Formato não encontrado.")
+        if not saida:
+            raise HTTPException(status_code=400, detail="Saída não encontrada.")
+
+        csv_data = None
+        if csv_file and csv_file.filename:
+            content = await csv_file.read()
+            try:
+                decoded = content.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                decoded = content.decode("latin-1")
+            
+            reader = csv.DictReader(io.StringIO(decoded))
+            csv_data = [row for row in reader]
+        elif numeracao and "csv_data" in numeracao and numeracao["csv_data"]:
+            csv_data = numeracao["csv_data"]
+
+        original_name = file.filename or "upload.pdf"
+        ext = os.path.splitext(original_name)[1].lower() or ".pdf"
+        if ext not in [".pdf", ".jpg", ".jpeg", ".png"]:
+            raise HTTPException(status_code=400, detail=f"Formato de arquivo não suportado: {ext}")
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp_in:
+            shutil.copyfileobj(file.file, tmp_in)
+            base_file_path = tmp_in.name
+
+        out_pdf_path = base_file_path.rsplit(".", 1)[0] + "_imposed.pdf"
+
+        config = ImpositionConfig(
+            base_file=base_file_path,
+            out_pdf=out_pdf_path,
+            formato=formato,
+            numeracao=numeracao,
+            saida=saida,
+            seq_start=data.get("seq_start", 1),
+            seq_end=data.get("seq_end", 100),
+            seq_increment=data.get("seq_increment", 1),
+            layout_schema=data.get("schema", "sequential"),
+            csv_data=csv_data,
+        )
+
+        engine = ImpositionEngine(config)
+        engine.process()
+
+        suffix_fn = f"CSV_{len(csv_data)}" if csv_data else f"{data.get('seq_start', 1)}-{data.get('seq_end', 100)}"
+
+        return FileResponse(
+            out_pdf_path,
+            media_type="application/pdf",
+            filename=f"VDP_{formato['name'].replace(' ', '_')}_{suffix_fn}.pdf"
+        )
+
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     print("Iniciando Local Print Agent na porta 9000...")

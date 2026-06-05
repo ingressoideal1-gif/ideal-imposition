@@ -2068,7 +2068,26 @@ window.runImposition = async function () {
     document.getElementById('btn-impose').disabled = true;
 
     try {
-        const baseUrl = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : '';
+        let baseUrl = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : '';
+        
+        // Verifica se o Agente Local está ativo para processar a imposição localmente de forma instantânea
+        let localActive = false;
+        try {
+            const agentCheck = await fetch("http://localhost:9000/", { method: "GET" }).catch(() => null);
+            if (agentCheck && agentCheck.ok) {
+                const checkData = await agentCheck.json().catch(() => ({}));
+                if (checkData.status === "running") {
+                    localActive = true;
+                }
+            }
+        } catch (_) {}
+
+        if (localActive) {
+            baseUrl = "http://localhost:9000";
+            console.log("[Imposition] Processando localmente na máquina do usuário para máxima velocidade");
+        } else {
+            console.log("[Imposition] Processando na nuvem (Render)");
+        }
         
         const headers = {};
         if (typeof firebase !== 'undefined' && firebase.auth() && firebase.auth().currentUser) {
