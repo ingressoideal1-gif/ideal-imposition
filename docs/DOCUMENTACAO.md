@@ -28,25 +28,15 @@ imposicao/
 
 ## 🚀 Como Rodar o Projeto
 
-### Método Rápido (Recomendado no Windows)
-1. Execute o script `iniciar_servidores.bat` localizado na raiz do projeto. Ele detectará o ambiente virtual e iniciará a **API Principal** (porta 8000) e o **Agente de Impressão Local** (porta 9000) em duas janelas separadas.
-2. Acesse a aplicação no seu navegador em: **`http://localhost:8000`** (redireciona automaticamente para o painel em `/app/index.html`).
-
-### Método Manual
 1. Certifique-se de ter as dependências instaladas através do ambiente virtual:
    ```bash
    .\venv\Scripts\pip install -r requirements.txt
    ```
-2. Inicialize o servidor da API principal:
+2. Inicialize o servidor uvicorn:
    ```bash
    .\venv\Scripts\python.exe app.py
    ```
-3. Em outro terminal, inicialize o Agente de Impressão Local (se necessário):
-   ```bash
-   .\venv\Scripts\python.exe local_print_agent.py
-   ```
-4. Acesse a aplicação no seu navegador em: **`http://localhost:8000`**
-
+3. Acesse a aplicação no seu navegador em: **`http://localhost:8000`** (redireciona automaticamente para o painel em `/app/index.html`).
 
 ---
 
@@ -65,22 +55,31 @@ O sistema processa dinamicamente a sobreposição de dados em layouts de imposi�
 
 ### 2. Esquemas de Distribuição e Imposição
 
-*   **Sequencial (Standard):** Distribui a sequência linha por linha, coluna por coluna na folha.
-*   **Corte e Empilhamento (Cut & Stack):** Distribui as sequências de modo que, ao cortar as pilhas impressas, a sequência numérica esteja perfeitamente ordenada de forma vertical de baixo para cima ao empilhar as sub-folhas.
+*   **Sequencial (Standard):** Distribui a sequência linha por linha, coluna por coluna na folha de saída.
+*   **Corte e Empilhamento (Cut & Stack):** Distribui as sequências de modo que, ao cortar as pilhas impressas e colocá-las umas sobre as outras, a sequência numérica esteja perfeitamente ordenada verticalmente.
+*   **Step & Repeat:** Clona o mesmo item (mesmo número/registro) por todas as posições da folha de saída.
+*   **Pdf Múltiplo (Paginação Especial):** Ao carregar um arquivo PDF de múltiplas páginas para imposição, o sistema bloqueia e preenche o número inicial e final de acordo com as páginas do PDF e distribui cada página individualmente nas posições da grade da folha.
 
-### 3. Rotação Individual de Páginas na Grade (Preview & Imposição)
+### 3. Modo de Impressão (Frente e Verso / Duplex)
 
-O sistema conta com um recurso premium de **Rotação Individual de Células** na grade de imposição:
-*   **Seleção Visual**: Na aba **Formatos**, abaixo do canvas de preview, o usuário pode clicar em qualquer página/célula da grade. A página selecionada é destacada com uma borda vermelha e uma indicação de ângulo e seta de orientação.
-*   **Controle de Ângulo**: Botões de controle dedicados permitem aplicar rotações rápidas de `0°`, `90°`, `180°` e `270°` na célula selecionada. O preview re-renderiza o layout e a orientação do texto instantaneamente.
-*   **Imposição Final Sincronizada**: Ao submeter o trabalho de imposição, o motor backend (`engine.py`) lê a propriedade `rotations` (um dicionário mapeando o índice de cada célula para o ângulo correspondente) e rotaciona fisicamente tanto a arte de fundo quanto reposiciona/rotaciona de forma compensada todos os dados variáveis (VDP) baseando-se no centro da célula correspondente.
+O sistema suporta imposição frente e verso automática. Ao selecionar **Frente e Verso (Duplex)**:
+*   Cada folha lógica gera duas páginas de saída: uma **Frente** (página ímpar do PDF final) e um **Verso** (página par do PDF final).
+*   No verso, as colunas físicas são espelhadas horizontalmente (`col_fisico = cols - 1 - col`) e os elementos VDP/Picotes são filtrados dinamicamente para renderizar apenas nas faces configuradas ("frente", "verso" ou "ambas").
+*   A rotação das células no verso é automaticamente invertida (`(360 - cell_rotation_frente) % 360`) para manter o alinhamento de cabeça com cabeça após o tombamento físico do papel.
+
+### 4. Rotação Individual de Células na Grade
+
+O painel permite aplicar rotações específicas ($0^\circ$, $90^\circ$, $180^\circ$, $270^\circ$) para cada célula da grade de imposição de forma independente. O motor do backend rotaciona o PDF de entrada e os elementos VDP correspondentes em torno do centro geométrico de cada célula física correspondente.
+
+### 5. Centralização Absoluta e Correção de CropBox
+
+Toda arte carregada (PDF, JPG, PNG) é centralizada de forma absoluta na sua área de aplicação. Para PDFs gerados por softwares que trazem origem deslocada ($x_0 \neq 0$ ou $y_0 \neq 0$), a imposição física faz uso de recorte explícito (`clip=page_base.rect`) no PyMuPDF para centralizar e alinhar perfeitamente o CropBox com as margens físicas do papel e marcas de corte. Veja a documentação técnica específica em [regra_centralizacao.md](file:///c:/Antigravity%20Projetos/imposicao/docs/regra_centralizacao.md).
 
 ---
 
 ## 🎨 Funcionalidades de Destaque no Frontend
 
 *   **Ajuda Dinâmica de Zeros (pad):** Ao alterar os dígitos no campo "Zeros (pad)" de uma Numeração, QR ou Barcode, a interface exibe dinamicamente o número total de dígitos e um preview do formato resultante (ex: `(5 dígitos = 00001)`, `(8 dígitos = 00000001)`). A atualização é feita de maneira a não perder o foco do input.
-*   **Controle e Preview de Rotação por Célula**: Interface viva e reativa que mapeia as coordenadas de clique em tela para mm e permite configurar a orientação das páginas uma a uma.
 *   **Arte de Fundo Centralizada:** Ao fazer o upload de uma arte de fundo (PDF/PNG/JPG), ela é centralizada no canvas nos eixos horizontal e vertical, ajustando-se dinamicamente com base nas proporções do formato selecionado.
 *   **Reset de Cache do CSV:** Permite remover um banco de dados e adicioná-lo novamente (mesmo arquivo ou arquivos diferentes) limpando o seletor físico do navegador para evitar problemas de cache de upload.
 
@@ -89,9 +88,9 @@ O sistema conta com um recurso premium de **Rotação Individual de Células** n
 ## 🔌 API REST (FastAPI)
 
 ### **1. Gerenciamento de Formatos (`/api/formatos`)**
-*   `GET /api/formatos`: Lista todos os formatos cadastrados (incluindo o dicionário `rotations`).
+*   `GET /api/formatos`: Lista todos os formatos cadastrados.
 *   `POST /api/formatos`: Cadastra um novo formato.
-*   `PUT /api/formatos/{id}`: Atualiza um formato existente (persistindo as rotações definidas).
+*   `PUT /api/formatos/{id}`: Atualiza um formato existente.
 *   `DELETE /api/formatos/{id}`: Remove um formato.
 
 ### **2. Gerenciamento de Numerações (`/api/numeracoes`)**
@@ -105,4 +104,4 @@ O sistema conta com um recurso premium de **Rotação Individual de Células** n
     *   `base_pdf`: Arquivo PDF original a ser imposicionado.
     *   `csv_file` (Opcional): Arquivo CSV com a tabela de dados dinâmicos.
     *   `config`: String JSON contendo os parâmetros de imposição (`formato_id`, `numeracao_id`, `saida_id`, lógica de sequência, etc.).
-    *   *Retorno:* Arquivo PDF montado com imposição e dados dinâmicos aplicados respeitando as rotações individuais das páginas.
+    *   *Retorno:* Arquivo PDF montado com imposição e dados dinâmicos aplicados.

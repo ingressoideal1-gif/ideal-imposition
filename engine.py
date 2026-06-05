@@ -110,12 +110,14 @@ class ImpositionConfig:
                  seq_end: int = 100,
                  seq_increment: int = 1,
                  layout_schema: str = "sequential",
-                 csv_data: list[dict] | None = None):
+                 csv_data: list[dict] | None = None,
+                 print_mode: str = "front"):
 
         self.base_file = base_file
         self.out_pdf = out_pdf
         self.saida = saida
         self.layout_schema = layout_schema
+        self.print_mode = print_mode
 
         # Formato (tamanho do item + grade + gaps)
         self.item_w = formato["width_mm"] * MM2PT
@@ -138,7 +140,24 @@ class ImpositionConfig:
         self.seq_end = seq_end
         self.seq_increment = seq_increment
         self.csv_data = csv_data
-        if csv_data:
+        
+        if layout_schema == "pdf_multiple":
+            # Para Pdf Múltiplo, a quantidade total de itens é baseada na quantidade de páginas
+            try:
+                if base_file.lower().endswith(".pdf"):
+                    temp_doc = fitz.open(base_file)
+                    total_pages = len(temp_doc)
+                    temp_doc.close()
+                    if self.print_mode == "duplex":
+                        self.total_items = math.ceil(total_pages / 2)
+                    else:
+                        self.total_items = total_pages
+                else:
+                    self.total_items = 1
+            except Exception as ex:
+                print(f"Erro ao contar paginas do PDF: {ex}")
+                self.total_items = 1
+        elif csv_data:
             self.total_items = len(csv_data)
         else:
             self.total_items = math.floor((seq_end - seq_start) / seq_increment) + 1
@@ -156,6 +175,7 @@ class ImpositionConfig:
                 if "width_mm" in e and e["type"] == "BARCODE":
                     e["_w"] = e["width_mm"] * MM2PT
                     e["_h"] = e.get("height_mm", 10) * MM2PT
+                e["face"] = el.get("face", "both")
                 self.elements.append(e)
 
 
@@ -304,12 +324,12 @@ class ImpositionEngine:
 
         doc_out = fitz.open()
         doc_base = self._load_base_as_pdf()
-        page_base = doc_base[0]
-        base_w = page_base.rect.width
-        base_h = page_base.rect.height
+        
+        is_duplex = (cfg.print_mode == "duplex")
 
         for S in range(total_sheets):
-            out_page = doc_out.new_page(width=cfg.sheet_w, height=cfg.sheet_h)
+            # 1. RENDERIZAR FRENTE DA FOLHA
+            out_page_front = doc_out.new_page(width=cfg.sheet_w, height=cfg.sheet_h)
 
             for row in range(rows):
                 for col in range(cols):
@@ -327,21 +347,28 @@ class ImpositionEngine:
                     if item_index >= cfg.total_items:
                         continue
 
-                    # Posição da célula (canto superior esquerdo)
+                    # Determinar o índice da página do PDF base para a Frente
+                    if cfg.layout_schema == "pdf_multiple":
+                        page_idx_front = (item_index * 2) if (item_index * 2) < len(doc_base) else 0
+                    else:
+                        page_idx_front = 0
+
+                    page_base = doc_base[page_idx_front]
+                    base_w = page_base.rect.width
+                    base_h = page_base.rect.height
+
+                    # Posição da célula
                     cell_x0 = start_x + col * (cfg.item_w + cfg.gap_h)
                     cell_y0 = start_y + row * (cfg.item_h + cfg.gap_v)
                     cell_x1 = cell_x0 + cfg.item_w
                     cell_y1 = cell_y0 + cfg.item_h
 
-                    # Obter rotação da célula (converte índice para string para compatibilidade com chaves de dicionário JSON)
                     cell_rotation = int(cfg.rotations.get(str(P), 0))
 
-                    # Arte em 100% escala original, centralizada na célula + offset
-                    # Centralizar: deslocar pelo delta entre tamanho do item e tamanho original da arte
+                    # Centralizar e aplicar offset
                     center_x = cell_x0 + (cfg.item_w - base_w) / 2
                     center_y = cell_y0 + (cfg.item_h - base_h) / 2
 
-                    # Aplicar offset (positivo H = direita, positivo V = para cima → negar Y no PDF)
                     art_x0 = center_x + cfg.offset_h
                     art_y0 = center_y - cfg.offset_v
                     art_x1 = art_x0 + base_w
@@ -350,62 +377,129 @@ class ImpositionEngine:
                     rect_art = fitz.Rect(art_x0, art_y0, art_x1, art_y1)
                     
                     if cell_rotation != 0:
-                        # Para rotacionar a arte base mantendo ela centralizada na célula:
-                        # passamos show_pdf_page com keep_proportion=True e rotate=cell_rotation
-                        # Calculamos o rect da célula em si para que show_pdf_page a posicione corretamente dentro dela rotacionada
-                        rect_cell = fitz.Rect(cell_x0, cell_y0, cell_x1, cell_y1)
-                        # Porém, o offset da arte também deve sofrer a rotação. 
-                        # Para simplificar e garantir a fidelidade, faremos show_pdf_page diretamente no rect da arte rotacionada
-                        # Rotacionamos a arte sobre seu próprio centro
-                        out_page.show_pdf_page(rect_art, doc_base, 0, keep_proportion=True, rotate=cell_rotation)
+                        out_page_front.show_pdf_page(rect_art, doc_base, page_idx_front, keep_proportion=True, rotate=cell_rotation, clip=page_base.rect)
                     else:
-                        out_page.show_pdf_page(rect_art, doc_base, 0)
+                        out_page_front.show_pdf_page(rect_art, doc_base, page_idx_front, clip=page_base.rect)
 
-                    # Renderizar elementos VDP
+                    # Renderizar VDP da Frente
                     val = cfg.seq_start + (item_index * cfg.seq_increment)
                     csv_row = cfg.csv_data[item_index] if cfg.csv_data else None
                     for el in cfg.elements:
+                        # Filtrar elementos que são apenas para verso
+                        if el.get("face", "both") == "back":
+                            continue
+                            
                         if cell_rotation != 0:
-                            # Se a célula tem rotação, precisamos rotacionar o ponto do elemento VDP em relação ao centro da célula!
-                            # Centro da célula:
                             cx = cell_x0 + cfg.item_w / 2
                             cy = cell_y0 + cfg.item_h / 2
-                            
-                            # Coordenadas do elemento sem rotação
-                            orig_el_x = cell_x0 + el["_x"]
-                            orig_el_y = cell_y0 + el["_y"]
-                            
-                            # Vetor do centro até o elemento
-                            dx = orig_el_x - cx
-                            dy = orig_el_y - cy
-                            
+                            dx = (cell_x0 + el["_x"]) - cx
+                            dy = (cell_y0 + el["_y"]) - cy
                             rad = math.radians(cell_rotation)
                             cos_a = math.cos(rad)
                             sin_a = math.sin(rad)
-                            
-                            # Rotacionar o vetor de deslocamento
                             rx = dx * cos_a - dy * sin_a
                             ry = dx * sin_a + dy * cos_a
-                            
-                            # Novas coordenadas absolutas
                             rot_el_x = cx + rx
                             rot_el_y = cy + ry
                             
-                            # Rotacionar também a rotação intrínseca do elemento
                             rotated_el = dict(el)
                             rotated_el["rotation"] = (el.get("rotation", 0) + cell_rotation) % 360
-                            
-                            # Para compensar o ponto de inserção do elemento que rotacionou em torno do seu próprio centro ou origem:
-                            # Passamos a nova coordenada e renderizamos
-                            # Ajustamos as coordenadas relativas temporárias
                             rotated_el["_x"] = rot_el_x - cell_x0
                             rotated_el["_y"] = rot_el_y - cell_y0
                             
-                            self._render_element(out_page, rotated_el, cell_x0, cell_y0, val, csv_row)
+                            self._render_element(out_page_front, rotated_el, cell_x0, cell_y0, val, csv_row)
                         else:
-                            self._render_element(out_page, el, cell_x0, cell_y0, val, csv_row)
+                            self._render_element(out_page_front, el, cell_x0, cell_y0, val, csv_row)
+
+            # 2. RENDERIZAR VERSO DA FOLHA (SE DUPLEX)
+            if is_duplex:
+                out_page_back = doc_out.new_page(width=cfg.sheet_w, height=cfg.sheet_h)
+
+                for row in range(rows):
+                    for col in range(cols):
+                        P = row * cols + col
+
+                        if cfg.layout_schema == "cut_stack":
+                            item_index = (P * total_sheets) + S
+                        elif cfg.layout_schema == "sequential":
+                            item_index = (S * poses_per_sheet) + P
+                        elif cfg.layout_schema == "step_repeat":
+                            item_index = S
+                        else:
+                            item_index = (S * poses_per_sheet) + P
+
+                        if item_index >= cfg.total_items:
+                            continue
+
+                        # Para o verso, a coluna física é espelhada horizontalmente
+                        col_verso = cols - 1 - col
+                        
+                        # Determinar a página base de verso no PDF de entrada
+                        if cfg.layout_schema == "pdf_multiple":
+                            page_idx_back = (item_index * 2 + 1) if (item_index * 2 + 1) < len(doc_base) else None
+                        else:
+                            page_idx_back = 1 if len(doc_base) >= 2 else None
+
+                        # Posição física da célula de verso
+                        cell_x0 = start_x + col_verso * (cfg.item_w + cfg.gap_h)
+                        cell_y0 = start_y + row * (cfg.item_h + cfg.gap_v)
+                        cell_x1 = cell_x0 + cfg.item_w
+                        cell_y1 = cell_y0 + cfg.item_h
+
+                        cell_rotation_frente = int(cfg.rotations.get(str(P), 0))
+                        cell_rotation = (360 - cell_rotation_frente) % 360
+
+                        if page_idx_back is not None:
+                            page_base = doc_base[page_idx_back]
+                            base_w = page_base.rect.width
+                            base_h = page_base.rect.height
+
+                            center_x = cell_x0 + (cfg.item_w - base_w) / 2
+                            center_y = cell_y0 + (cfg.item_h - base_h) / 2
+
+                            art_x0 = center_x + cfg.offset_h
+                            art_y0 = center_y - cfg.offset_v
+                            art_x1 = art_x0 + base_w
+                            art_y1 = art_y0 + base_h
+
+                            rect_art = fitz.Rect(art_x0, art_y0, art_x1, art_y1)
+                            
+                            if cell_rotation != 0:
+                                out_page_back.show_pdf_page(rect_art, doc_base, page_idx_back, keep_proportion=True, rotate=cell_rotation, clip=page_base.rect)
+                            else:
+                                out_page_back.show_pdf_page(rect_art, doc_base, page_idx_back, clip=page_base.rect)
+
+                        # Renderizar VDP do Verso
+                        val = cfg.seq_start + (item_index * cfg.seq_increment)
+                        csv_row = cfg.csv_data[item_index] if cfg.csv_data else None
+                        for el in cfg.elements:
+                            # Filtrar elementos que são apenas para frente
+                            if el.get("face", "both") == "front":
+                                continue
+
+                            if cell_rotation != 0:
+                                cx = cell_x0 + cfg.item_w / 2
+                                cy = cell_y0 + cfg.item_h / 2
+                                dx = (cell_x0 + el["_x"]) - cx
+                                dy = (cell_y0 + el["_y"]) - cy
+                                rad = math.radians(cell_rotation)
+                                cos_a = math.cos(rad)
+                                sin_a = math.sin(rad)
+                                rx = dx * cos_a - dy * sin_a
+                                ry = dx * sin_a + dy * cos_a
+                                rot_el_x = cx + rx
+                                rot_el_y = cy + ry
+                                
+                                rotated_el = dict(el)
+                                rotated_el["rotation"] = (el.get("rotation", 0) + cell_rotation) % 360
+                                rotated_el["_x"] = rot_el_x - cell_x0
+                                rotated_el["_y"] = rot_el_y - cell_y0
+                                
+                                self._render_element(out_page_back, rotated_el, cell_x0, cell_y0, val, csv_row)
+                            else:
+                                self._render_element(out_page_back, el, cell_x0, cell_y0, val, csv_row)
 
         doc_out.save(cfg.out_pdf, garbage=3, deflate=True)
         doc_base.close()
         doc_out.close()
-        print(f"[engine] Gerado: {cfg.out_pdf} ({total_sheets} folha(s), {cfg.total_items} itens)")
+        print(f"[engine] Gerado: {cfg.out_pdf} ({total_sheets * (2 if is_duplex else 1)} folha(s) fisicas, {cfg.total_items} itens)")
