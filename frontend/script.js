@@ -2023,6 +2023,8 @@ function showFileInfo() {
     }
 }
 
+let impositionAbortController = null;
+
 window.runImposition = async function () {
     const fmtId = document.getElementById('imp-formato').value;
     const numId = document.getElementById('imp-numeracao').value;
@@ -2066,6 +2068,17 @@ window.runImposition = async function () {
     overlay.classList.add('active');
     sub.textContent = `Gerando ${total.toLocaleString('pt-BR')} itens...`;
     document.getElementById('btn-impose').disabled = true;
+
+    // Instancia o AbortController e associa ao botão de cancelamento
+    impositionAbortController = new AbortController();
+    const cancelBtn = document.getElementById('btn-cancel-imposition');
+    if (cancelBtn) {
+        cancelBtn.onclick = () => {
+            if (impositionAbortController) {
+                impositionAbortController.abort();
+            }
+        };
+    }
 
     try {
         let baseUrl = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : '';
@@ -2111,7 +2124,8 @@ window.runImposition = async function () {
         const res = await fetch(`${baseUrl}/api/impose`, { 
             method: 'POST', 
             headers: headers,
-            body: formData 
+            body: formData,
+            signal: impositionAbortController.signal
         });
         if (!res.ok) {
             const err = await res.json();
@@ -2128,12 +2142,17 @@ window.runImposition = async function () {
         document.body.removeChild(a);
         toast('PDF gerado com sucesso!', 'success');
     } catch (err) {
-        toast(`Erro: ${err.message}`, 'error');
+        if (err.name === 'AbortError') {
+            toast('Geração do PDF cancelada pelo usuário.', 'info');
+        } else {
+            toast(`Erro: ${err.message}`, 'error');
+        }
     } finally {
         overlay.classList.remove('active');
         document.getElementById('btn-impose').disabled = false;
+        impositionAbortController = null;
     }
-};
+};;
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 loadAll();
