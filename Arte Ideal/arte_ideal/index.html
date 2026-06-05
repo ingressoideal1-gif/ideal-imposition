@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arte Ideal - Print Designer Web</title>
+    
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <!-- Fabric.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+    
+    <!-- jsPDF CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
+    <!-- Mozilla PDF.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    
+    <!-- Estilos Customizados -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    
+    <div class="app-container">
+        <!-- Barra Superior -->
+        <header class="top-bar glass">
+            <img src="Logo Ideal Dark.png" alt="Ingresso Ideal" class="app-logo">
+            <div class="top-actions">
+                <button class="btn btn-secondary" id="btn-new">Novo</button>
+                <button class="btn btn-secondary" id="btn-open">Abrir</button>
+                <button class="btn btn-secondary" id="btn-save">Salvar</button>
+                <button class="btn btn-secondary" id="btn-import-project">Importar</button>
+                <input type="file" id="project-upload" accept=".json" style="display:none">
+                <input type="file" id="project-import-upload" accept=".json" style="display:none">
+                <div class="separator"></div>
+                <button class="btn btn-outline" id="btn-export-png">PNG</button>
+                <button class="btn btn-outline" id="btn-export-jpg">JPG</button>
+                <button class="btn btn-primary" id="btn-export">Exportar PDF</button>
+            </div>
+        </header>
+
+        <div class="main-workspace">
+            <!-- Painel de Ferramentas Esquerdo -->
+            <aside class="tools-panel glass">
+                <div class="panel-title">Ferramentas</div>
+                <button class="tool-btn active" id="tool-select">👆 Selecionar</button>
+                <button class="tool-btn" id="tool-text">📝 Texto</button>
+                <button class="tool-btn" id="tool-rect">🟦 Retângulo</button>
+                <button class="tool-btn" id="tool-circle">🔵 Círculo</button>
+                <button class="tool-btn" id="tool-image">🖼️ Imagem</button>
+                <input type="file" id="image-upload" accept="image/png, image/jpeg, image/svg+xml" style="display:none">
+                <button class="tool-btn" id="tool-pdf">📄 Importar PDF</button>
+                <input type="file" id="pdf-upload" accept="application/pdf" style="display:none">
+
+                <div class="prop-group" id="gallery-panel" style="margin-top: 20px; border-top: 1px solid var(--border-glass); padding-top: 20px;">
+                    <label>Galeria de Ativos (IA)</label>
+                    <div class="image-gallery" id="image-gallery">
+                        <!-- Imagens aprovadas virão aqui -->
+                    </div>
+                </div>
+
+                <div class="prop-group" style="margin-top: 10px; border-top: 1px solid var(--border-glass); padding-top: 20px;">
+                    <label>Templates Base (Guias)</label>
+                    <div class="input-row" style="margin-bottom: 8px; justify-content: space-between; align-items: center;">
+                        <span style="font-size:12px;color:var(--text-muted)">Aplicar na Pág:</span>
+                        <input type="number" id="input-template-page" value="1" min="1" style="width:60px; text-align:center;">
+                    </div>
+                    <div class="template-gallery" id="template-gallery">
+                        <!-- Para adicionar mais templates, copie e cole este bloco e mude o nome da imagem jpg -->
+                        <div class="template-item" data-url="modelo1.jpg">
+                            <img src="modelo1.jpg" alt="Modelo 1" onerror="this.src='https://placehold.co/218x20/1e293b/94a3b8?text=Falta+modelo1.jpg'">
+                        </div>
+                        <div class="template-item" data-url="modelo2.jpg">
+                            <img src="modelo2.jpg" alt="Modelo 2" onerror="this.src='https://placehold.co/218x20/f8fafc/64748b?text=Falta+modelo2.jpg'">
+                        </div>
+                    </div>
+                    <button class="btn btn-outline" id="btn-remove-template" style="margin-top: 8px; width: 100%;">Remover desta pág</button>
+                </div>
+            </aside>
+
+            <!-- Área Central de Canvas -->
+            <main class="canvas-container-wrapper">
+                <div class="canvas-scroll-area">
+                    <div class="canvas-editor-wrapper">
+                        <!-- O FabricJS precisa de um Canvas HTML -->
+                        <canvas id="main-canvas"></canvas>
+                    </div>
+                </div>
+                <!-- Barra Inferior de Paginação -->
+                <div class="pagination-bar glass" style="justify-content: center; gap: 20px;">
+                    <button class="btn btn-primary" id="btn-duplicate-page" style="width: 250px; font-weight: bold; font-size: 15px;">+ Duplicar Página</button>
+                    
+                    <div style="display: flex; gap: 10px; align-items: center; border-left: 1px solid var(--border-glass); padding-left: 20px;">
+                        <label style="font-size: 14px; color: var(--text-muted);">Excluir Pág:</label>
+                        <input type="number" id="input-delete-page" min="2" value="2" style="width: 60px; text-align: center; height: 35px; padding: 4px;">
+                        <button class="btn btn-outline" id="btn-delete-page" style="color: var(--danger); border-color: rgba(239, 68, 68, 0.3); margin: 0;">🗑️ Excluir</button>
+                    </div>
+                </div>
+            </main>
+
+            <!-- Painel de Propriedades Direito -->
+            <aside class="properties-panel glass">
+                <div class="panel-title">Propriedades</div>
+                <div class="prop-group">
+                    <label>Paleta de Cores Rápida</label>
+                    <div class="color-palette" id="color-palette">
+                        <!-- Amostras de cores via JS -->
+                    </div>
+                    <div class="input-row" style="margin-top: 8px; align-items: center;">
+                        <input type="color" id="palette-color-picker" value="#3b82f6" title="Escolha uma cor para adicionar" style="width: 50px; height: 32px; padding: 0;">
+                        <button class="btn btn-secondary" id="btn-add-palette-color" style="flex: 1; height: 32px; font-size: 13px; padding: 0 10px;">+ Cor</button>
+                    </div>
+                </div>
+                <div class="prop-group">
+                    <label>Posição (mm)</label>
+                    <div class="input-row">
+                        <input type="number" placeholder="X" id="prop-x">
+                        <input type="number" placeholder="Y" id="prop-y">
+                    </div>
+                </div>
+                <div class="prop-group">
+                    <label>Dimensões (mm)</label>
+                    <div class="input-row">
+                        <input type="number" placeholder="Largura" id="prop-w">
+                        <input type="number" placeholder="Altura" id="prop-h">
+                    </div>
+                </div>
+                <div class="prop-group" id="text-properties" style="display: none;">
+                    <label>Texto e Fonte</label>
+                    <select id="prop-font-family" class="input-select">
+                        <option value="Inter">Carregando fontes locais...</option>
+                    </select>
+                    <div class="input-row" style="margin-top: 8px;">
+                        <input type="number" placeholder="Tamanho" id="prop-font-size" title="Tamanho da Fonte">
+                        <input type="color" id="prop-font-color" value="#000000" title="Cor do Texto">
+                    </div>
+                    <div class="input-row" style="margin-top: 8px;">
+                        <button class="btn btn-outline" id="btn-bold" style="font-weight: bold;">B</button>
+                        <button class="btn btn-outline" id="btn-italic" style="font-style: italic;">I</button>
+                    </div>
+                </div>
+                <div class="prop-group" id="shape-properties" style="display: none;">
+                    <label>Cor da Forma</label>
+                    <div class="input-row">
+                        <input type="color" id="prop-shape-color" value="#3b82f6" title="Cor de Preenchimento">
+                    </div>
+                </div>
+                <div class="prop-group">
+                    <label>Camadas</label>
+                    <button class="btn btn-outline" id="btn-front">Trazer para Frente</button>
+                    <button class="btn btn-outline" id="btn-back">Enviar para Trás</button>
+                </div>
+                <div class="prop-group">
+                    <label>Alinhamento</label>
+                    <button class="btn btn-outline" id="btn-align-center-y">↕️ Centralizar na Altura (Atalho: E)</button>
+                </div>
+                <div class="prop-group">
+                    <label>Ações</label>
+                    <button class="btn btn-outline" id="btn-duplicate">Duplicar (Ctrl+D)</button>
+                    <button class="btn btn-outline" id="btn-delete" style="color: var(--danger); border-color: rgba(239, 68, 68, 0.3);">Deletar (Del)</button>
+                </div>
+                
+
+            </aside>
+        </div>
+    </div>
+
+    <!-- Gemini Studio Overlay -->
+    <div class="gemini-studio-overlay" id="gemini-studio-overlay">
+        <div class="gemini-studio-container">
+            <div class="gemini-studio-body">
+                <!-- Manual Controls Left Pane -->
+                <aside class="gemini-studio-left">
+                    <div class="panel-title">Ajustes Manuais</div>
+                    
+                    <div class="filter-control">
+                        <span><span>Brilho</span><span id="val-brightness">100%</span></span>
+                        <input type="range" id="slider-brightness" min="0" max="200" value="100">
+                    </div>
+                    
+                    <div class="filter-control">
+                        <span><span>Contraste</span><span id="val-contrast">100%</span></span>
+                        <input type="range" id="slider-contrast" min="0" max="200" value="100">
+                    </div>
+                    
+                    <div class="filter-control">
+                        <span><span>Saturação</span><span id="val-saturation">100%</span></span>
+                        <input type="range" id="slider-saturation" min="0" max="200" value="100">
+                    </div>
+                    
+                    <div class="filter-control">
+                        <span><span>Desfoque</span><span id="val-blur">0px</span></span>
+                        <input type="range" id="slider-blur" min="0" max="10" value="0" step="0.5">
+                    </div>
+                    
+                    <div class="filter-control">
+                        <span><span>Tons de Cinza</span><span id="val-grayscale">0%</span></span>
+                        <input type="range" id="slider-grayscale" min="0" max="100" value="0">
+                    </div>
+                    
+                    <div class="filter-control">
+                        <span><span>Inversão</span><span id="val-invert">0%</span></span>
+                        <input type="range" id="slider-invert" min="0" max="100" value="0">
+                    </div>
+
+                    <button class="btn btn-secondary" id="btn-studio-crop" style="margin-top: 10px; width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                        ✂️ Cortar Imagem
+                    </button>
+                    <button class="btn btn-secondary" id="btn-reset-filters" style="margin-top: 10px; width: 100%;">Resetar Filtros</button>
+                </aside>
+
+                <!-- Central Canvas Editor -->
+                <main class="gemini-studio-main">
+                    <div class="gemini-studio-canvas-container">
+                        <canvas id="gemini-canvas"></canvas>
+                        <div class="gemini-canvas-glow-ring" id="gemini-glow-ring"></div>
+                        
+                        <!-- Overlay de Crop da Imagem -->
+                        <div class="gemini-crop-overlay" id="gemini-crop-overlay" style="display: none;">
+                            <div class="gemini-crop-area" id="gemini-crop-area">
+                                <div class="gemini-crop-handle tl" data-handle="tl"></div>
+                                <div class="gemini-crop-handle tr" data-handle="tr"></div>
+                                <div class="gemini-crop-handle bl" data-handle="bl"></div>
+                                <div class="gemini-crop-handle br" data-handle="br"></div>
+                                <div class="gemini-crop-grid-line h1"></div>
+                                <div class="gemini-crop-grid-line h2"></div>
+                                <div class="gemini-crop-grid-line v1"></div>
+                                <div class="gemini-crop-grid-line v2"></div>
+                                <div class="gemini-crop-actions">
+                                    <button class="btn-crop-confirm" id="btn-crop-apply" title="Confirmar Corte">✓ Recortar</button>
+                                    <button class="btn-crop-cancel" id="btn-crop-dismiss" title="Cancelar">✗ Cancelar</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </main>
+
+                <!-- AI Gemini Right Pane -->
+                <aside class="gemini-studio-right">
+                    <div class="gemini-ai-header">
+                        <span class="gemini-ai-logo">✦</span>
+                        <span class="gemini-ai-title">Gemini Studio</span>
+                    </div>
+
+                    <div class="gemini-prompts-title">Ações Rápidas de IA</div>
+                    <div class="gemini-prompts-grid">
+                        <button class="gemini-prompt-btn" data-action="remove-bg">
+                            <span>✨</span> Remover Fundo (Branco/Preto)
+                        </button>
+                        <button class="gemini-prompt-btn" data-action="vectorize">
+                            <span>🎨</span> Vetorizar Logo (Contraste Extremo)
+                        </button>
+                        <button class="gemini-prompt-btn" data-action="monochrome">
+                            <span>🌓</span> Preto e Branco Puro
+                        </button>
+                        <button class="gemini-prompt-btn" data-action="neon">
+                            <span>🌈</span> Brilho & Neon (Borda Brilhante)
+                        </button>
+                        <button class="gemini-prompt-btn" data-action="upscale">
+                            <span>⚡</span> Upscale 4x (Super Resolução)
+                        </button>
+                    </div>
+
+                    <div class="gemini-chat-area">
+                        <div class="gemini-messages" id="gemini-messages">
+                            <div class="chat-msg assistant">
+                                Olá! Eu sou o Gemini, seu assistente de IA. Selecione uma ação rápida acima ou digite instruções personalizadas para começarmos a editar sua imagem.
+                            </div>
+                        </div>
+                        <div class="gemini-loading" id="gemini-loading">
+                            <div class="gemini-spinner"></div>
+                            <span class="gemini-loading-text" id="gemini-loading-text">Processando IA avançada...</span>
+                        </div>
+                    </div>
+
+                    <div class="gemini-dialog-input-row">
+                        <input type="text" class="gemini-chat-input" id="gemini-chat-input" placeholder="Pergunte ao Gemini... Ex: adicione borda vermelha" onkeydown="if(event.key === 'Enter') { event.preventDefault(); window.handleCustomPrompt(); }">
+                        <button class="btn btn-primary" id="btn-gemini-send" style="padding: 8px 12px;" onclick="window.handleCustomPrompt()">Enviar</button>
+                    </div>
+                </aside>
+            </div>
+
+            <!-- Bottom Footer Actions -->
+            <footer class="gemini-studio-footer">
+                <button class="btn btn-secondary" id="btn-gemini-cancel">Cancelar</button>
+                <button class="btn btn-primary" id="btn-gemini-approve">Aprovar e Salvar na Galeria</button>
+            </footer>
+        </div>
+    </div>
+
+    <!-- Script Customizado -->
+    <script src="script.js?v=2"></script>
+</body>
+</html>

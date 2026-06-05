@@ -1,0 +1,107 @@
+{
+    "formatos": [
+        {
+            "name": "Mobi",
+            "width_mm": 152,
+            "height_mm": 53,
+            "cols": 2,
+            "rows": 4,
+            "gap_h_mm": 0,
+            "gap_v_mm": 0,
+            "id": "inp_d5f8d271"
+        }
+    ],
+    "numeracoes": [
+        {
+            "name": "Mobi Padrão",
+            "formato_id": "inp_d5f8d271",
+            "csv_filename": "",
+            "csv_headers": [],
+            "csv_data": null,
+            "svg_content": "",
+            "svg_filename": "",
+            "elements": [
+                {
+                    "id": "el_1",
+                    "type": "QR",
+                    "x_mm": 132.39198093525192,
+                    "y_mm": 31.78874715961855,
+                    "rotation": 0,
+                    "color": "#000000",
+                    "size_mm": 15,
+                    "pad": 4,
+                    "prefix": "",
+                    "suffix": ""
+                },
+                {
+                    "id": "el_2",
+                    "type": "QR",
+                    "x_mm": 133.82729211087423,
+                    "y_mm": 1.6104376309274429,
+                    "rotation": 0,
+                    "color": "#000000",
+                    "size_mm": 15,
+                    "pad": 4,
+                    "prefix": "",
+                    "suffix": ""
+                },
+                {
+                    "id": "el_3",
+                    "type": "FIXED",
+                    "x_mm": 5,
+                    "y_mm": 5,
+                    "rotation": 0,
+                    "color": "#000000",
+                    "font_size": 12,
+                    "font_name": "helv",
+                    "fixed": true,
+                    "fixed_value": "Texto"
+                },
+                {
+                    "id": "el_4",
+                    "type": "BARCODE",
+                    "x_mm": 8.872541162261115,
+                    "y_mm": 32.59956065892915,
+                    "rotation": 0,
+                    "color": "#000000",
+                    "width_mm": 40,
+                    "height_mm": 10,
+                    "barcode_format": "code128",
+                    "pad": 4,
+                    "prefix": "",
+                    "suffix": ""
+                },
+                {
+                    "id": "el_6",
+                    "type": "TEXT",
+                    "x_mm": 62.37819573261884,
+                    "y_mm": 17.26478079186254,
+                    "rotation": 0,
+                    "color": "#000000",
+                    "font_size": 25,
+                    "font_name": "helv",
+                    "pad": 6,
+                    "prefix": "",
+                    "suffix": ""
+                }
+            ],
+            "id": "num_b26adf36"
+        }
+    ],
+    "saidas": [
+        {
+            "name": "A4",
+            "width_mm": 320,
+            "height_mm": 220,
+            "file_format": "pdf",
+            "id": "sai_564c69ec"
+        },
+        {
+            "name": "A3",
+            "width_mm": 297,
+            "height_mm": 420,
+            "file_format": "pdf",
+            "id": "sai_189b5bc0"
+        }
+    ]
+}

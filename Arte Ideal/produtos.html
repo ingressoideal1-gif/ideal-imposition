@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Produtos | Ingresso Ideal</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* CSS específico para responsividade da página de produtos */
+        @media (max-width: 768px) {
+            .product-detail-card, .product-detail-card.reverse {
+                flex-direction: column !important;
+            }
+            .product-detail-card > div {
+                min-height: 200px !important;
+                padding: 20px !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="top-bar">
+            <div class="container">
+                <span class="contact-info"><i class="fas fa-phone-alt"></i> (051) 3093 - 2840</span>
+                <span class="contact-info"><i class="fas fa-envelope"></i> contato@ingressoideal.com.br</span>
+            </div>
+        </div>
+        <nav class="navbar container">
+            <div class="logo">
+                <i class="fas fa-ticket-alt"></i> Ingresso<span>Ideal</span>
+            </div>
+            <div class="mobile-menu-btn">
+                <i class="fas fa-bars"></i>
+            </div>
+            <div class="nav-menu">
+                <ul class="nav-links">
+                    <li><a href="index.html">Início</a></li>
+                    <li><a href="produtos.html" class="active">Produtos</a></li>
+                    <li><a href="index.html#app">Ideal Control</a></li>
+                    <li><a href="#empresa">Empresa</a></li>
+                </ul>
+                <div class="nav-actions">
+                    <a href="#carrinho" class="cart-icon"><i class="fas fa-shopping-cart"></i><span class="badge">0</span></a>
+                    <a href="#cliente" class="btn-primary-outline"><i class="fas fa-user"></i> Área do Cliente</a>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <section class="page-header" style="background: var(--secondary-color); color: white; padding: 60px 0; text-align: center;">
+            <div class="container">
+                <h1 style="font-size: 2.5rem; margin-bottom: 10px;">Catálogo de Produtos</h1>
+                <p style="color: rgba(255,255,255,0.8); font-size: 1.1rem;">Soluções completas para controle e segurança do seu evento.</p>
+            </div>
+        </section>
+
+        <section class="detailed-products" style="padding: 80px 0;">
+            <div class="container">
+                <!-- Pulseiras -->
+                <div class="product-detail-card" style="display: flex; gap: 40px; margin-bottom: 60px; background: var(--white); border-radius: 16px; overflow: hidden; box-shadow: var(--shadow); align-items: center;">
+                    <div style="flex: 1; min-height: 300px; background: linear-gradient(135deg, #FF9A9E 0%, #FECFEF 100%); display: flex; align-items: center; justify-content: center;">
+                        <i class="fas fa-ring fa-5x text-white"></i>
+                    </div>
+                    <div style="flex: 1.5; padding: 40px;">
+                        <h2 style="font-size: 2rem; color: var(--secondary-color); margin-bottom: 15px;">Pulseiras de Identificação</h2>
+                        <p style="margin-bottom: 20px; font-size: 1.1rem;">Nossas pulseiras garantem segurança e controle eficaz. Temos opções para qualquer tipo de evento.</p>
+                        <ul style="margin-bottom: 25px; line-height: 2;">
+                            <li><i class="fas fa-check" style="color: var(--primary-color); margin-right: 10px;"></i> <strong>Tecido:</strong> Elegantes e duráveis, ideais para festivais.</li>
+                            <li><i class="fas fa-check" style="color: var(--primary-color); margin-right: 10px;"></i> <strong>Neon:</strong> Brilham no escuro, perfeitas para festas noturnas.</li>
+                            <li><i class="fas fa-check" style="color: var(--primary-color); margin-right: 10px;"></i> <strong>Tyvek:</strong> Econômicas e invioláveis, ótimas para controle de um dia.</li>
+                        </ul>
+                        <button class="btn-primary add-to-cart" data-product="Pulseiras de Identificação"><i class="fas fa-cart-plus"></i> Adicionar ao Orçamento</button>
+                    </div>
+                </div>
+
+                <!-- Ingressos -->
+                <div class="product-detail-card reverse" style="display: flex; gap: 40px; margin-bottom: 60px; background: var(--white); border-radius: 16px; overflow: hidden; box-shadow: var(--shadow); align-items: center; flex-direction: row-reverse;">
+                    <div style="flex: 1; min-height: 300px; background: linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%); display: flex; align-items: center; justify-content: center;">
+                        <i class="fas fa-ticket-alt fa-5x text-white"></i>
+                    </div>
+                    <div style="flex: 1.5; padding: 40px;">
+                        <h2 style="font-size: 2rem; color: var(--secondary-color); margin-bottom: 15px;">Ingressos de Segurança</h2>
+                        <p style="margin-bottom: 20px; font-size: 1.1rem;">Evite falsificações. Produzimos ingressos em papel moeda com os mais avançados itens de segurança do mercado.</p>
+                        <ul style="margin-bottom: 25px; line-height: 2;">
+                            <li><i class="fas fa-check" style="color: var(--primary-color); margin-right: 10px;"></i> Tinta reagente a luz negra (UV).</li>
+                            <li><i class="fas fa-check" style="color: var(--primary-color); margin-right: 10px;"></i> Fundo numismático e microletras.</li>
+                            <li><i class="fas fa-check" style="color: var(--primary-color); margin-right: 10px;"></i> Papel com fibras coloridas.</li>
+                            <li><i class="fas fa-check" style="color: var(--primary-color); margin-right: 10px;"></i> Holografia de alta segurança.</li>
+                        </ul>
+                        <button class="btn-primary add-to-cart" data-product="Ingressos de Segurança"><i class="fas fa-cart-plus"></i> Adicionar ao Orçamento</button>
+                    </div>
+                </div>
+
+                <!-- Credenciais -->
+                <div class="product-detail-card" style="display: flex; gap: 40px; margin-bottom: 60px; background: var(--white); border-radius: 16px; overflow: hidden; box-shadow: var(--shadow); align-items: center;">
+                    <div style="flex: 1; min-height: 300px; background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%); display: flex; align-items: center; justify-content: center;">
+                        <i class="fas fa-id-badge fa-5x text-white"></i>
+                    </div>
+                    <div style="flex: 1.5; padding: 40px;">
+                        <h2 style="font-size: 2rem; color: var(--secondary-color); margin-bottom: 15px;">Credenciais Personalizadas</h2>
+                        <p style="margin-bottom: 20px; font-size: 1.1rem;">Essenciais para a identificação de staff, imprensa e VIPs. Qualidade fotográfica e acabamento impecável.</p>
+                        <ul style="margin-bottom: 25px; line-height: 2;">
+                            <li><i class="fas fa-check" style="color: var(--primary-color); margin-right: 10px;"></i> Impressão frente e verso.</li>
+                            <li><i class="fas fa-check" style="color: var(--primary-color); margin-right: 10px;"></i> Cordões personalizados com sua marca.</li>
+                            <li><i class="fas fa-check" style="color: var(--primary-color); margin-right: 10px;"></i> Opção com código de barras ou QR Code.</li>
+                        </ul>
+                        <button class="btn-primary add-to-cart" data-product="Credenciais Personalizadas"><i class="fas fa-cart-plus"></i> Adicionar ao Orçamento</button>
+                    </div>
+                </div>
+
+                <!-- Tickets -->
+                <div class="product-detail-card reverse" style="display: flex; gap: 40px; margin-bottom: 0; background: var(--white); border-radius: 16px; overflow: hidden; box-shadow: var(--shadow); align-items: center; flex-direction: row-reverse;">
+                    <div style="flex: 1; min-height: 300px; background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%); display: flex; align-items: center; justify-content: center;">
+                        <i class="fas fa-receipt fa-5x text-white"></i>
+                    </div>
+                    <div style="flex: 1.5; padding: 40px;">
+                        <h2 style="font-size: 2rem; color: var(--secondary-color); margin-bottom: 15px;">Tickets e Fichas de Bar</h2>
+                        <p style="margin-bottom: 20px; font-size: 1.1rem;">Otimize as filas e o controle financeiro do seu evento com nossos blocos de fichas.</p>
+                        <ul style="margin-bottom: 25px; line-height: 2;">
+                            <li><i class="fas fa-check" style="color: var(--primary-color); margin-right: 10px;"></i> Blocos numerados e serrilhados.</li>
+                            <li><i class="fas fa-check" style="color: var(--primary-color); margin-right: 10px;"></i> Impressão rápida e econômica.</li>
+                            <li><i class="fas fa-check" style="color: var(--primary-color); margin-right: 10px;"></i> Diversas opções de cores por produto (água, cerveja, etc).</li>
+                        </ul>
+                        <button class="btn-primary add-to-cart" data-product="Tickets e Fichas de Bar"><i class="fas fa-cart-plus"></i> Adicionar ao Orçamento</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer id="empresa" class="footer">
+        <div class="container footer-content">
+            <div class="footer-brand">
+                <h2><i class="fas fa-ticket-alt"></i> Ingresso<span>Ideal</span></h2>
+                <p>Ingressos de segurança com entrega em todo o Brasil. Vanguarda em venda online.</p>
+                <div class="social-links">
+                    <a href="#"><i class="fab fa-facebook-f"></i></a>
+                    <a href="#"><i class="fab fa-twitter"></i></a>
+                    <a href="#"><i class="fab fa-instagram"></i></a>
+                </div>
+            </div>
+            <div class="footer-links">
+                <h4>Links Úteis</h4>
+                <ul>
+                    <li><a href="#">Dúvidas Frequentes</a></li>
+                    <li><a href="#">Sobre Nós</a></li>
+                    <li><a href="#">Política de Privacidade</a></li>
+                </ul>
+            </div>
+            <div class="footer-contact">
+                <h4>Contato</h4>
+                <p><i class="fas fa-phone-alt"></i> (051) 3093-2840</p>
+                <p><i class="fas fa-envelope"></i> contato@ingressoideal.com.br</p>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2026 Ingresso Ideal. Desenvolvido com tecnologia moderna.</p>
+        </div>
+    </footer>
+
+    <a href="https://wa.me/" class="whatsapp-btn" target="_blank" title="Fale conosco no WhatsApp">
+        <i class="fab fa-whatsapp"></i>
+    </a>
+
+    <!-- Modal do Carrinho -->
+    <div id="cart-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <h2>Seu Orçamento</h2>
+            <div id="cart-items" class="cart-items-container">
+                <p>Seu carrinho está vazio.</p>
+            </div>
+            <div class="cart-actions">
+                <button id="checkout-btn" class="btn-primary" disabled><i class="fab fa-whatsapp"></i> Enviar via WhatsApp</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

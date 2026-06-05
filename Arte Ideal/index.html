@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ingresso Ideal | Segurança e Qualidade</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <header class="header">
+        <div class="top-bar">
+            <div class="container">
+                <span class="contact-info"><i class="fas fa-phone-alt"></i> (051) 3093 - 2840</span>
+                <span class="contact-info"><i class="fas fa-envelope"></i> contato@ingressoideal.com.br</span>
+            </div>
+        </div>
+        <nav class="navbar container">
+            <div class="logo">
+                <i class="fas fa-ticket-alt"></i> Ingresso<span>Ideal</span>
+            </div>
+            <div class="mobile-menu-btn">
+                <i class="fas fa-bars"></i>
+            </div>
+            <div class="nav-menu">
+                <ul class="nav-links">
+                    <li><a href="index.html" class="active">Início</a></li>
+                    <li><a href="produtos.html">Produtos</a></li>
+                    <li><a href="index.html#app">Ideal Control</a></li>
+                    <li><a href="#empresa">Empresa</a></li>
+                </ul>
+                <div class="nav-actions">
+                    <a href="#carrinho" class="cart-icon"><i class="fas fa-shopping-cart"></i><span class="badge">0</span></a>
+                    <a href="#cliente" class="btn-primary-outline"><i class="fas fa-user"></i> Área do Cliente</a>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <section id="inicio" class="hero">
+            <div class="hero-content container">
+                <h1>Ingressos tão incríveis <br><span class="highlight">quanto o seu evento!</span></h1>
+                <p>Produção e envio para todo o Brasil em até 24h. Pulseiras, tickets e credenciais com máxima segurança.</p>
+                <div class="hero-buttons">
+                    <a href="#produtos" class="btn-primary">Ver Produtos</a>
+                    <a href="#contato" class="btn-secondary">Falar com Consultor</a>
+                </div>
+            </div>
+        </section>
+
+        <section class="features container">
+            <div class="feature-card">
+                <div class="icon"><i class="fas fa-laptop"></i></div>
+                <h3>Pedidos Online</h3>
+                <p>Compre ingressos, pulseiras e credenciais de forma rápida. Acompanhe todas as etapas online.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon"><i class="fas fa-paint-brush"></i></div>
+                <h3>Artes Grátis</h3>
+                <p>Criação rápida e gratuita das artes para seus ingressos, enviadas via WhatsApp ou e-mail.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon"><i class="fas fa-truck-fast"></i></div>
+                <h3>Envio Rápido</h3>
+                <p>Produção em até 24h após aprovação. Sedex, PAC, Carta, Rodoviário e Aéreo para todo o Brasil.</p>
+            </div>
+        </section>
+
+        <section id="produtos" class="products">
+            <div class="container">
+                <div class="section-title">
+                    <h2>Nossos Produtos</h2>
+                    <p>Qualidade e segurança para o seu evento</p>
+                </div>
+                <div class="product-grid">
+                    <div class="product-item">
+                        <div class="product-image" style="background: linear-gradient(135deg, #FF9A9E 0%, #FECFEF 100%);">
+                            <i class="fas fa-ring fa-3x text-white"></i>
+                        </div>
+                        <div class="product-info">
+                            <h3>Pulseiras</h3>
+                            <p>Tecido, Neon e Tyvek para identificação segura.</p>
+                            <button class="btn-primary-outline add-to-cart" data-product="Pulseiras" style="margin-top: 15px; width: 100%;"><i class="fas fa-cart-plus"></i> Orçar</button>
+                        </div>
+                    </div>
+                    <div class="product-item">
+                        <div class="product-image" style="background: linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%);">
+                            <i class="fas fa-ticket-alt fa-3x text-white"></i>
+                        </div>
+                        <div class="product-info">
+                            <h3>Ingressos</h3>
+                            <p>Papel moeda com diversos itens de segurança anti-fraude.</p>
+                            <button class="btn-primary-outline add-to-cart" data-product="Ingressos" style="margin-top: 15px; width: 100%;"><i class="fas fa-cart-plus"></i> Orçar</button>
+                        </div>
+                    </div>
+                    <div class="product-item">
+                        <div class="product-image" style="background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);">
+                            <i class="fas fa-id-badge fa-3x text-white"></i>
+                        </div>
+                        <div class="product-info">
+                            <h3>Credenciais</h3>
+                            <p>Crachás personalizados com cordão exclusivo.</p>
+                            <button class="btn-primary-outline add-to-cart" data-product="Credenciais" style="margin-top: 15px; width: 100%;"><i class="fas fa-cart-plus"></i> Orçar</button>
+                        </div>
+                    </div>
+                    <div class="product-item">
+                        <div class="product-image" style="background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);">
+                            <i class="fas fa-receipt fa-3x text-white"></i>
+                        </div>
+                        <div class="product-info">
+                            <h3>Tickets / Fichas</h3>
+                            <p>Blocos numerados para bares e consumação rápida.</p>
+                            <button class="btn-primary-outline add-to-cart" data-product="Tickets / Fichas" style="margin-top: 15px; width: 100%;"><i class="fas fa-cart-plus"></i> Orçar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="app" class="ideal-control">
+            <div class="container app-container">
+                <div class="app-text">
+                    <span class="tag">GRATUITO PARA CLIENTES</span>
+                    <h2>Ideal Control - App de Acesso</h2>
+                    <p>Moderno, rápido e fácil de utilizar. Oferecemos gratuitamente um sistema para o controle de acesso online e off-line.</p>
+                    <ul class="app-benefits">
+                        <li><i class="fas fa-check-circle"></i> Leitura de Código de Barras e QR Code</li>
+                        <li><i class="fas fa-check-circle"></i> Evite falsificações em tempo real</li>
+                        <li><i class="fas fa-check-circle"></i> Acabe com as filas na portaria</li>
+                    </ul>
+                    <a href="#" class="btn-primary"><i class="fab fa-android"></i> Baixar para Android</a>
+                </div>
+                <div class="app-mockup">
+                    <div class="phone-frame">
+                        <i class="fas fa-qrcode fa-5x"></i>
+                        <h4>Controle de Acesso</h4>
+                        <div class="scan-line"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer id="empresa" class="footer">
+        <div class="container footer-content">
+            <div class="footer-brand">
+                <h2><i class="fas fa-ticket-alt"></i> Ingresso<span>Ideal</span></h2>
+                <p>Ingressos de segurança com entrega em todo o Brasil. Vanguarda em venda online.</p>
+                <div class="social-links">
+                    <a href="#"><i class="fab fa-facebook-f"></i></a>
+                    <a href="#"><i class="fab fa-twitter"></i></a>
+                    <a href="#"><i class="fab fa-instagram"></i></a>
+                </div>
+            </div>
+            <div class="footer-links">
+                <h4>Links Úteis</h4>
+                <ul>
+                    <li><a href="#">Dúvidas Frequentes</a></li>
+                    <li><a href="#">Sobre Nós</a></li>
+                    <li><a href="#">Política de Privacidade</a></li>
+                </ul>
+            </div>
+            <div class="footer-contact">
+                <h4>Contato</h4>
+                <p><i class="fas fa-phone-alt"></i> (051) 3093-2840</p>
+                <p><i class="fas fa-envelope"></i> contato@ingressoideal.com.br</p>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2026 Ingresso Ideal. Desenvolvido com tecnologia moderna.</p>
+        </div>
+    </footer>
+
+    <a href="https://wa.me/" class="whatsapp-btn" target="_blank" title="Fale conosco no WhatsApp">
+        <i class="fab fa-whatsapp"></i>
+    </a>
+
+    <!-- Modal do Carrinho -->
+    <div id="cart-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <h2>Seu Orçamento</h2>
+            <div id="cart-items" class="cart-items-container">
+                <p>Seu carrinho está vazio.</p>
+            </div>
+            <div class="cart-actions">
+                <button id="checkout-btn" class="btn-primary" disabled><i class="fab fa-whatsapp"></i> Enviar via WhatsApp</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
