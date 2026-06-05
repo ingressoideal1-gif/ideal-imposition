@@ -26,6 +26,11 @@ const state = {
     formatos: [],
     numeracoes: [],
     saidas: [],
+    cores: [],
+    fmtRotations: {}, // mapeia índice de célula -> ângulo (0, 90, 180, 270)
+    fmtSelectedCellIndex: null, // índice da célula selecionada no preview
+    printMode: "front",
+    previewFace: "front",
 
     // Editor de Numeração
     numFormato: null,       // formato selecionado no editor
@@ -48,10 +53,6 @@ const state = {
     numCsvHeaders: [],
     numCsvData: null,
     numCsvFilename: "",
-
-    // Rotação individual de células no Formato
-    fmtSelectedCellIndex: null,
-    fmtRotations: {}, // mapeia índice de célula -> ângulo (0, 90, 180, 270)
 };
 
 // ─── Utility — Toast ─────────────────────────────────────────────────────────
@@ -78,9 +79,61 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
 
 // ─── API Helpers ──────────────────────────────────────────────────────────────
 async function api(method, path, body = null) {
+    // Se o Firebase estiver ativo e for rota de banco de dados
+    if (typeof dbFirebase !== 'undefined' && dbFirebase && (path.startsWith('/formatos') || path.startsWith('/numeracoes') || path.startsWith('/saidas') || path.startsWith('/cores'))) {
+        const parts = path.substring(1).split('/');
+        const col = parts[0];
+        const docId = parts[1] || null;
+
+        try {
+            if (method === 'GET') {
+                if (docId) {
+                    const doc = await dbFirebase.collection(col).doc(docId).get();
+                    if (!doc.exists) throw new Error('Item não encontrado no Firestore');
+                    return { id: doc.id, ...doc.data() };
+                } else {
+                    const snapshot = await dbFirebase.collection(col).get();
+                    const items = [];
+                    snapshot.forEach(doc => {
+                        items.push({ id: doc.id, ...doc.data() });
+                    });
+                    return items;
+                }
+            } else if (method === 'POST') {
+                const docRef = await dbFirebase.collection(col).add(body);
+                return { id: docRef.id };
+            } else if (method === 'PUT') {
+                if (!docId) throw new Error('ID ausente para atualização');
+                const updateData = { ...body };
+                delete updateData.id;
+                await dbFirebase.collection(col).doc(docId).set(updateData, { merge: true });
+                return { status: 'success' };
+            } else if (method === 'DELETE') {
+                if (!docId) throw new Error('ID ausente para exclusão');
+                await dbFirebase.collection(col).doc(docId).delete();
+                return { status: 'success' };
+            }
+        } catch (e) {
+            console.error(`Erro no Firestore (${method} ${path}):`, e);
+            throw new Error(`Erro no Banco de Dados: ${e.message}`);
+        }
+    }
+
+    const baseUrl = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : '';
     const opts = { method, headers: {} };
     if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
-    const res = await fetch(`/api${path}`, opts);
+    
+    // Obter o token JWT do Firebase Auth ativo se disponível
+    if (typeof firebase !== 'undefined' && firebase.auth() && firebase.auth().currentUser) {
+        try {
+            const token = await firebase.auth().currentUser.getIdToken();
+            opts.headers['Authorization'] = `Bearer ${token}`;
+        } catch (e) {
+            console.error("Erro ao obter Firebase ID Token:", e);
+        }
+    }
+
+    const res = await fetch(`${baseUrl}/api${path}`, opts);
     if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: 'Erro desconhecido' }));
         throw new Error(err.detail || `HTTP ${res.status}`);
@@ -88,17 +141,20 @@ async function api(method, path, body = null) {
     return res.json().catch(() => ({}));
 }
 
+
 // ─── Load All Data ────────────────────────────────────────────────────────────
 async function loadAll() {
     try {
-        const [fmts, nums, sais] = await Promise.all([
+        const [fmts, nums, sais, cores] = await Promise.all([
             api('GET', '/formatos'),
             api('GET', '/numeracoes'),
             api('GET', '/saidas'),
+            api('GET', '/cores').catch(() => []),
         ]);
         state.formatos = fmts;
         state.numeracoes = nums;
         state.saidas = sais;
+        state.cores = cores || [];
         renderAll();
     } catch (e) {
         toast('Erro ao carregar dados: ' + e.message, 'error');
@@ -109,6 +165,7 @@ function renderAll() {
     renderFormatos();
     renderNumeracoes();
     renderSaidas();
+    renderCores();
     updateBadges();
     populateSelects();
 }
@@ -117,6 +174,8 @@ function updateBadges() {
     document.getElementById('badge-formatos').textContent = state.formatos.length;
     document.getElementById('badge-numeracao').textContent = state.numeracoes.length;
     document.getElementById('badge-saidas').textContent = state.saidas.length;
+    const badgeCores = document.getElementById('badge-cores');
+    if (badgeCores) badgeCores.textContent = state.cores.length;
 }
 
 // ─── FORMATOS ─────────────────────────────────────────────────────────────────
@@ -164,7 +223,7 @@ async function saveFmt() {
         gap_v_mm: parseFloat(document.getElementById('fmt-gapv').value),
         offset_h_mm: offH,
         offset_v_mm: offV,
-        rotations: state.fmtRotations, // Sincroniza o dicionário de rotações
+        rotations: state.fmtRotations,
     };
     if (!data.name) return toast('Informe um nome para o formato.', 'error');
     try {
@@ -205,12 +264,9 @@ function editFmt(id) {
     document.getElementById('fmt-gapv').value = f.gap_v_mm;
     document.getElementById('fmt-offh').value = (f.offset_h_mm || 0).toString().replace('.', ',');
     document.getElementById('fmt-offv').value = (f.offset_v_mm || 0).toString().replace('.', ',');
-    
-    // Restaurar as rotações individuais e reiniciar seleção
     state.fmtRotations = f.rotations || {};
     state.fmtSelectedCellIndex = null;
     updateRotationButtons();
-
     document.getElementById('fmt-form-title').textContent = 'Editar Formato';
     document.getElementById('btn-fmt-cancel').style.display = 'inline-flex';
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -231,14 +287,14 @@ function cancelFmtEdit() {
     // Remover classes de validação
     document.getElementById('fmt-offh').classList.remove('invalid');
     document.getElementById('fmt-offv').classList.remove('invalid');
-
+    document.getElementById('fmt-form-title').textContent = 'Novo Formato';
+    document.getElementById('btn-fmt-cancel').style.display = 'none';
+    
     // Limpar estados de rotação
     state.fmtRotations = {};
     state.fmtSelectedCellIndex = null;
     updateRotationButtons();
 
-    document.getElementById('fmt-form-title').textContent = 'Novo Formato';
-    document.getElementById('btn-fmt-cancel').style.display = 'none';
     drawFormatPreview();
 }
 
@@ -359,6 +415,286 @@ window.setPreset = (w, h) => {
     document.getElementById('sai-h').value = h;
 };
 
+// ─── CORES ───────────────────────────────────────────────────────────────────
+let corPdfBase64 = "";
+let corPdfFilename = "";
+
+// Função para renderizar a primeira página do PDF de referência no Canvas
+async function renderPdfPreview(pdfBase64) {
+    const canvas = document.getElementById('cor-pdf-preview-canvas');
+    const emptyEl = document.getElementById('cor-pdf-preview-empty');
+    if (!canvas) return;
+
+    if (!pdfBase64) {
+        canvas.style.display = 'none';
+        if (emptyEl) {
+            emptyEl.style.display = 'block';
+            emptyEl.innerHTML = `
+                <div style="font-size: 3rem; margin-bottom: 12px; opacity: 0.7;">📄</div>
+                <p style="font-size: 0.9rem; font-weight: 500;">Selecione uma cor para editar ou faça upload de um PDF para visualizar.</p>
+            `;
+        }
+        return;
+    }
+
+    try {
+        if (emptyEl) {
+            emptyEl.style.display = 'block';
+            emptyEl.innerHTML = '<div class="spinner"></div><p style="margin-top:10px; font-size:0.88rem; font-weight:500;">Carregando PDF...</p>';
+        }
+        
+        const base64Data = pdfBase64.includes('base64,') ? pdfBase64.split('base64,')[1] : pdfBase64;
+        const binStr = atob(base64Data);
+        const len = binStr.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            bytes[i] = binStr.charCodeAt(i);
+        }
+
+        const loadingTask = pdfjsLib.getDocument({ data: bytes });
+        const pdf = await loadingTask.promise;
+        const page = await pdf.getPage(1);
+        
+        // Renderizar com escala adequada baseada no container
+        const viewport = page.getViewport({ scale: 1.0 });
+        const containerW = canvas.parentElement.clientWidth - 30; // compensar paddings
+        const scale = containerW / viewport.width;
+        const scaledViewport = page.getViewport({ scale: Math.min(scale, 1.5) });
+        
+        const context = canvas.getContext('2d');
+        canvas.width = scaledViewport.width;
+        canvas.height = scaledViewport.height;
+        
+        const renderContext = {
+            canvasContext: context,
+            viewport: scaledViewport
+        };
+        await page.render(renderContext).promise;
+        
+        if (emptyEl) emptyEl.style.display = 'none';
+        canvas.style.display = 'block';
+    } catch (e) {
+        console.error("Erro ao renderizar preview do PDF:", e);
+        if (emptyEl) {
+            emptyEl.style.display = 'block';
+            emptyEl.innerHTML = '<div style="font-size: 2rem; color: var(--red); margin-bottom:10px;">✕</div><p style="font-size:0.88rem; font-weight:500;">Falha ao carregar visualização do PDF.</p>';
+        }
+        canvas.style.display = 'none';
+    }
+}
+window.renderPdfPreview = renderPdfPreview;
+
+// Event Listener para ler o arquivo PDF em Base64
+document.getElementById('cor-pdf-file')?.addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+        toast('Selecione apenas arquivos PDF.', 'error');
+        e.target.value = '';
+        return;
+    }
+    const reader = new FileReader();
+    reader.onload = function(evt) {
+        corPdfBase64 = evt.target.result;
+        corPdfFilename = file.name;
+        document.getElementById('cor-pdf-file-name').textContent = "📎 " + file.name;
+        document.getElementById('btn-remove-cor-pdf').style.display = 'inline-flex';
+        renderPdfPreview(corPdfBase64); // Exibir preview do PDF recém-carregado
+    };
+    reader.readAsDataURL(file);
+});
+
+function clearCorPdfFile() {
+    corPdfBase64 = "";
+    corPdfFilename = "";
+    const fileEl = document.getElementById('cor-pdf-file');
+    if (fileEl) fileEl.value = "";
+    const labelEl = document.getElementById('cor-pdf-file-name');
+    if (labelEl) labelEl.textContent = "";
+    const btnRemove = document.getElementById('btn-remove-cor-pdf');
+    if (btnRemove) btnRemove.style.display = 'none';
+    renderPdfPreview(null); // Limpar visualização
+}
+window.clearCorPdfFile = clearCorPdfFile;
+
+function onCorFormatoSelect() {
+    const fmtId = document.getElementById('cor-formato').value;
+    if (!fmtId) return;
+    const fmt = state.formatos.find(f => f.id === fmtId);
+    if (fmt) {
+        document.getElementById('cor-w').value = fmt.width_mm;
+        document.getElementById('cor-h').value = fmt.height_mm;
+    }
+}
+window.onCorFormatoSelect = onCorFormatoSelect;
+
+function renderCores() {
+    const container = document.getElementById('cores-grouped-container');
+    const empty = document.getElementById('empty-cores');
+    if (!container) return;
+    
+    if (!state.cores || !state.cores.length) {
+        container.innerHTML = '';
+        if (empty) empty.style.display = 'block';
+        return;
+    }
+    if (empty) empty.style.display = 'none';
+
+    // Agrupar cores por formato_id
+    const grouped = {};
+    state.cores.forEach(c => {
+        if (!grouped[c.formato_id]) {
+            grouped[c.formato_id] = [];
+        }
+        grouped[c.formato_id].push(c);
+    });
+
+    let html = '';
+    
+    // Obter todos os formatos que possuem cores
+    Object.keys(grouped).forEach(formatoId => {
+        const fmt = state.formatos.find(f => f.id === formatoId);
+        const fmtName = fmt ? fmt.name : 'Formato Excluído/Não Identificado';
+        const coresDoFormato = grouped[formatoId];
+
+        html += `
+            <div class="card" style="margin-bottom: 24px;">
+                <div class="card-header" style="background: rgba(255,255,255,0.02); border-bottom: 1px solid var(--border);">
+                    <span class="card-title">📐 ${fmtName}</span>
+                    <span class="badge badge-teal">${coresDoFormato.length} ${coresDoFormato.length === 1 ? 'cor' : 'cores'}</span>
+                </div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Nome da Cor</th>
+                            <th>Tamanho</th>
+                            <th>Arquivo PDF</th>
+                            <th style="text-align: right; width: 120px;">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${coresDoFormato.map(c => {
+                            const pdfLink = c.pdf_base64 
+                                ? `<a href="${c.pdf_base64}" download="${c.pdf_filename || 'referencia.pdf'}" class="badge badge-teal" style="text-decoration:none;" onclick="event.stopPropagation();">📥 Baixar PDF</a>`
+                                : '<span style="color:var(--text-faint)">Sem arquivo</span>';
+                            
+                            return `
+                                <tr style="cursor: pointer;" onclick="editCor('${c.id}')" title="Clique para editar/visualizar esta cor">
+                                    <td><strong>${c.name}</strong></td>
+                                    <td>${c.width_mm} × ${c.height_mm} mm</td>
+                                    <td>${pdfLink}</td>
+                                    <td class="actions-cell" style="text-align: right;" onclick="event.stopPropagation();">
+                                        <button class="btn btn-sm btn-ghost" onclick="editCor('${c.id}')">✏️ Editar</button>
+                                        <button class="btn btn-danger btn-sm" onclick="deleteCor('${c.id}')">🗑️</button>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    });
+
+    container.innerHTML = html;
+}
+window.renderCores = renderCores;
+
+async function saveCor() {
+    const id = document.getElementById('cor-id').value;
+    const name = document.getElementById('cor-name').value.trim();
+    const formatoId = document.getElementById('cor-formato').value;
+    const w = parseFloat(document.getElementById('cor-w').value);
+    const h = parseFloat(document.getElementById('cor-h').value);
+
+    if (!name) return toast('Informe o nome da cor.', 'error');
+    if (!formatoId) return toast('Selecione um formato base.', 'error');
+    if (isNaN(w) || w <= 0 || isNaN(h) || h <= 0) return toast('Informe dimensões de tamanho válidas.', 'error');
+
+    const data = {
+        name,
+        formato_id: formatoId,
+        width_mm: w,
+        height_mm: h,
+        pdf_base64: corPdfBase64 || null,
+        pdf_filename: corPdfFilename || ""
+    };
+
+    try {
+        if (id) {
+            await api('PUT', `/cores/${id}`, data);
+            toast('Cor atualizada!', 'success');
+        } else {
+            await api('POST', '/cores', data);
+            toast('Cor cadastrada!', 'success');
+        }
+        cancelCorEdit();
+        await loadAll();
+        
+        // Redirecionar para a página Listar Cores após salvar
+        const navListaCores = document.getElementById('nav-lista-cores');
+        if (navListaCores) navListaCores.click();
+    } catch (e) {
+        toast(e.message, 'error');
+    }
+}
+window.saveCor = saveCor;
+
+function editCor(id) {
+    const c = state.cores.find(x => x.id === id);
+    if (!c) return;
+    
+    // Redirecionar para a página Cores (de cadastro) ao editar
+    const navCores = document.getElementById('nav-cores');
+    if (navCores) navCores.click();
+
+    document.getElementById('cor-id').value = c.id;
+    document.getElementById('cor-name').value = c.name;
+    document.getElementById('cor-formato').value = c.formato_id;
+    document.getElementById('cor-w').value = c.width_mm;
+    document.getElementById('cor-h').value = c.height_mm;
+    
+    if (c.pdf_base64) {
+        corPdfBase64 = c.pdf_base64;
+        corPdfFilename = c.pdf_filename || "referencia.pdf";
+        document.getElementById('cor-pdf-file-name').textContent = "📎 " + corPdfFilename;
+        document.getElementById('btn-remove-cor-pdf').style.display = 'inline-flex';
+        renderPdfPreview(c.pdf_base64); // Exibir preview do PDF ao editar
+    } else {
+        clearCorPdfFile();
+    }
+    
+    document.getElementById('cor-form-title').textContent = 'Editar Cor';
+    document.getElementById('btn-cor-cancel').style.display = 'inline-flex';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+window.editCor = editCor;
+
+function cancelCorEdit() {
+    document.getElementById('cor-id').value = '';
+    document.getElementById('cor-name').value = '';
+    document.getElementById('cor-formato').value = '';
+    document.getElementById('cor-w').value = '';
+    document.getElementById('cor-h').value = '';
+    clearCorPdfFile();
+    document.getElementById('cor-form-title').textContent = 'Nova Cor';
+    document.getElementById('btn-cor-cancel').style.display = 'none';
+    renderPdfPreview(null); // Resetar preview do PDF
+}
+window.cancelCorEdit = cancelCorEdit;
+
+async function deleteCor(id) {
+    if (!confirm('Excluir esta cor?')) return;
+    try {
+        await api('DELETE', `/cores/${id}`);
+        toast('Cor excluída.', 'success');
+        await loadAll();
+    } catch (e) {
+        toast(e.message, 'error');
+    }
+}
+window.deleteCor = deleteCor;
+
 // ─── SELECTS (população) ──────────────────────────────────────────────────────
 function populateSelects() {
     // Numeração — select de formatos
@@ -367,6 +703,15 @@ function populateSelects() {
     selNumFmt.innerHTML = '<option value="">— Selecione um Formato —</option>' +
         state.formatos.map(f => `<option value="${f.id}">${f.name} (${f.width_mm}×${f.height_mm}mm)</option>`).join('');
     if (curNumFmt) selNumFmt.value = curNumFmt;
+
+    // Cores - select de formatos
+    const selCorFmt = document.getElementById('cor-formato');
+    if (selCorFmt) {
+        const curCorFmt = selCorFmt.value;
+        selCorFmt.innerHTML = '<option value="">— Selecione —</option>' +
+            state.formatos.map(f => `<option value="${f.id}">${f.name}</option>`).join('');
+        if (curCorFmt) selCorFmt.value = curCorFmt;
+    }
 
     // Catálogo - filtro de formato
     const selCatFmt = document.getElementById('catalogo-filter-format');
@@ -393,6 +738,23 @@ function populateSelects() {
         }
         if (cur) sel.value = cur;
     });
+
+    // Amostras
+    const selAmCor = document.getElementById('amostra-cor');
+    if (selAmCor) {
+        const cur = selAmCor.value;
+        selAmCor.innerHTML = '<option value="">— Selecione uma Cor —</option>' +
+            state.cores.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+        if (cur) selAmCor.value = cur;
+    }
+
+    const selAmNum = document.getElementById('amostra-numeracao');
+    if (selAmNum) {
+        const cur = selAmNum.value;
+        selAmNum.innerHTML = '<option value="">— Selecione uma Numeração —</option>' +
+            state.numeracoes.map(n => `<option value="${n.id}">${n.name}</option>`).join('');
+        if (cur) selAmNum.value = cur;
+    }
 }
 
 // ─── NUMERAÇÃO EDITOR ─────────────────────────────────────────────────────────
@@ -636,13 +998,26 @@ function drawCanvas() {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, W, H);
 
-    // Arte de fundo (camada de referência semitransparente)
+    // Arte de fundo (camada de referência semitransparente em tamanho original e centralizada)
     if (state.bgImage) {
-        const imgW = state.bgImage.width;
-        const imgH = state.bgImage.height;
-        const scale = Math.min(W / imgW, H / imgH);
-        const drawW = imgW * scale;
-        const drawH = imgH * scale;
+        const MM2PT = 2.8346;
+        let originalW_mm = 0;
+        let originalH_mm = 0;
+
+        if (state.bgImage.originalPdfWidthPt) {
+            // Se for PDF, usar os pontos originais dividindo por MM2PT (72 / 25.4 = 2.8346)
+            originalW_mm = state.bgImage.originalPdfWidthPt / MM2PT;
+            originalH_mm = state.bgImage.originalPdfHeightPt / MM2PT;
+        } else {
+            // Se for imagem (JPG/PNG), obter o DPI lido ou adotar 300 DPI como fallback de alta resolução
+            const dpi = state.bgImage.dpiValue || 300;
+            // pixels / dpi * 25.4 (conversão para mm)
+            originalW_mm = (state.bgImage.width / dpi) * 25.4;
+            originalH_mm = (state.bgImage.height / dpi) * 25.4;
+        }
+
+        const drawW = originalW_mm * S;
+        const drawH = originalH_mm * S;
         const drawX = (W - drawW) / 2;
         const drawY = (H - drawH) / 2;
 
@@ -725,7 +1100,9 @@ function drawElement(ctx, el, S) {
         } else if (el.source === 'database') {
             label = `${el.prefix || ''}[${el.csv_column || 'coluna'}]${el.suffix || ''}`;
         } else {
-            label = `${el.prefix || ''}0001${el.suffix || ''}`;
+            const padValue = typeof el.pad !== 'undefined' ? el.pad : 6;
+            const dummyNum = String(1).padStart(padValue, '0');
+            label = `${el.prefix || ''}${dummyNum}${el.suffix || ''}`;
         }
         ctx.fillText(label, 0, fs);
 
@@ -804,17 +1181,18 @@ function drawElement(ctx, el, S) {
         const fmt = state.numFormato;
         const h_px = fmt ? fmt.height_mm * S : 100 * S;
         ctx.strokeStyle = color;
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 5.0; // Aumentado para 5px
         if (isSelected) {
             ctx.strokeStyle = '#3b82f6';
-            ctx.lineWidth = 2.0;
+            ctx.lineWidth = 7.0;
         }
-        ctx.setLineDash([4, 4]);
+        ctx.setLineDash([10, 5]);
         ctx.beginPath();
         // A linha é vertical e cruza o formato inteiro.
         // Como o contexto foi transladado para (x, y), a coordenada local Y vai de -y até (h_px - y)
         ctx.moveTo(0, -y);
         ctx.lineTo(0, h_px - y);
+        ctx.stroke();
         ctx.setLineDash([]);
     } else if (el.type === 'SVG') {
         const w = (el.width_mm || 20) * S;
@@ -1012,7 +1390,8 @@ function selectElId(id, multi = false) {
     if (state.selectedElId) {
         const card = document.getElementById(`elcard-${state.selectedElId}`);
         if (card) {
-            card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            // Desativado scrollIntoView automático para evitar rolagem incômoda da página inteira
+            // card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
     }
 }
@@ -1135,21 +1514,27 @@ async function loadBgImage(file) {
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
             const page = await pdf.getPage(1);
-            const vp = page.getViewport({ scale: 1 });
-            const cW = Math.round(state.numFormato.width_mm * state.canvasScale);
-            const cH = Math.round(state.numFormato.height_mm * state.canvasScale);
-            const scale = Math.min(cW / vp.width, cH / vp.height);
-            const sv = page.getViewport({ scale });
+            
+            // Renderizar em alta qualidade (escala 2) sem redimensionar ao tamanho do formato aqui
+            const vp = page.getViewport({ scale: 2 });
             const off = document.createElement('canvas');
             const octx = off.getContext('2d');
-            off.width = Math.round(sv.width);
-            off.height = Math.round(sv.height);
+            off.width = Math.round(vp.width);
+            off.height = Math.round(vp.height);
             octx.fillStyle = '#ffffff';
             octx.fillRect(0, 0, off.width, off.height);
-            await page.render({ canvasContext: octx, viewport: sv }).promise;
+            await page.render({ canvasContext: octx, viewport: vp }).promise;
             img.src = off.toDataURL('image/png');
+            
+            // Guardar dimensões originais do PDF (em pontos / scale=1) para que drawCanvas possa escalar corretamente
+            const vpOrig = page.getViewport({ scale: 1 });
+            img.originalPdfWidthPt = vpOrig.width;
+            img.originalPdfHeightPt = vpOrig.height;
         } else {
             img.src = URL.createObjectURL(file);
+            // Obter o DPI da imagem a partir dos metadados e salvar na img
+            const dpi = await getDpi(file);
+            img.dpiValue = dpi;
         }
         await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
         state.bgImage = img;
@@ -1242,7 +1627,7 @@ document.addEventListener('DOMContentLoaded', () => {
 window.addElement = function (type) {
     state.numElCounter++;
     const id = `el_${state.numElCounter}`;
-    const base = { id, type, x_mm: type === 'PICOTE' ? 25 : 5, y_mm: type === 'PICOTE' ? 0 : 5, rotation: 0, color: type === 'PICOTE' ? '#ef4444' : '#000000' };
+    const base = { id, type, x_mm: type === 'PICOTE' ? 25 : 5, y_mm: type === 'PICOTE' ? 0 : 5, rotation: 0, color: type === 'PICOTE' ? '#ef4444' : '#000000', face: 'both' };
 
     if (type === 'TEXT') Object.assign(base, { font_size: 12, font_name: 'helv', pad: 6, prefix: '', suffix: '' });
     if (type === 'FIXED') Object.assign(base, { font_size: 12, font_name: 'helv', fixed: true, fixed_value: 'Texto' });
@@ -1297,6 +1682,13 @@ function renderElementsList() {
                 <div class="element-card-fields" style="grid-template-columns: 1fr 1fr;">
                     <div class="form-group"><label>X (mm)</label><input class="form-control el-x" type="number" value="${el.x_mm.toFixed(1)}" step="0.5" onchange="updateEl('${el.id}','x_mm',+this.value)"></div>
                     <div class="form-group"><label>Cor</label><input class="form-control" type="color" value="${el.color || '#ef4444'}" onchange="updateEl('${el.id}','color',this.value)"></div>
+                    <div class="form-group"><label>Face</label>
+                        <select class="form-control" onchange="updateEl('${el.id}','face',this.value)">
+                            <option value="both" ${el.face === 'both' || !el.face ? 'selected' : ''}>Frente e Verso</option>
+                            <option value="front" ${el.face === 'front' ? 'selected' : ''}>Apenas Frente</option>
+                            <option value="back" ${el.face === 'back' ? 'selected' : ''}>Apenas Verso</option>
+                        </select>
+                    </div>
                 </div>
             </div>`;
         }
@@ -1398,6 +1790,13 @@ function renderElementsList() {
                 ${el.type !== 'SVG' ? `
                 <div class="form-group"><label>Cor</label><input class="form-control" type="color" value="${el.color || '#000000'}" onchange="updateEl('${el.id}','color',this.value)"></div>
                 ` : ''}
+                <div class="form-group"><label>Face</label>
+                    <select class="form-control" onchange="updateEl('${el.id}','face',this.value)">
+                        <option value="both" ${el.face === 'both' || !el.face ? 'selected' : ''}>Frente e Verso</option>
+                        <option value="front" ${el.face === 'front' ? 'selected' : ''}>Apenas Frente</option>
+                        <option value="back" ${el.face === 'back' ? 'selected' : ''}>Apenas Verso</option>
+                    </select>
+                </div>
                 ${(el.type !== 'FIXED' && el.type !== 'SVG') ? `
                 <div class="form-group">
                     <label>Origem</label>
@@ -1486,7 +1885,8 @@ function selectElementCard(id) {
     const card = document.getElementById(`elcard-${id}`);
     if (card) {
         card.classList.add('selected');
-        card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        // Desativado scrollIntoView automático para evitar rolagem incômoda da página inteira
+        // card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 }
 
@@ -1550,68 +1950,58 @@ window.saveNumeracao = async function () {
 };
 
 // ─── IMPOSIÇÃO ────────────────────────────────────────────────────────────────
-async function getImageDPI(file) {
-    const defaultDpi = { x: 300, y: 300 }; // Impressão costuma usar 300 DPI como padrão
-    const ext = file.name.split('.').pop().toLowerCase();
-    
-    if (ext === 'jpg' || ext === 'jpeg') {
-        try {
-            const buffer = await file.slice(0, 128).arrayBuffer();
-            const view = new DataView(buffer);
-            if (view.getUint16(0) === 0xFFD8) {
-                let offset = 2;
-                while (offset < view.byteLength - 2) {
-                    const marker = view.getUint16(offset);
-                    const length = view.getUint16(offset + 2);
-                    if (marker === 0xFFE0) { // APP0 (JFIF)
-                        if (offset + 14 <= view.byteLength) {
-                            const unit = view.getUint8(offset + 11);
-                            const xDensity = view.getUint16(offset + 12);
-                            const yDensity = view.getUint16(offset + 14);
-                            if (unit === 1) { // dots per inch
-                                return { x: xDensity || 300, y: yDensity || 300 };
-                            } else if (unit === 2) { // dots per cm
-                                return { x: Math.round(xDensity * 2.54) || 300, y: Math.round(yDensity * 2.54) || 300 };
-                            }
-                        }
-                        break;
+// Detecta o DPI real de um arquivo de imagem (JPEG ou PNG) a partir dos seus metadados binários
+async function getDpi(file) {
+    try {
+        const buffer = await file.arrayBuffer();
+        const view = new DataView(buffer);
+        
+        // Verifica se é JPEG (começa com FF D8)
+        if (view.byteLength > 4 && view.getUint16(0) === 0xFFD8) {
+            let offset = 2;
+            while (offset < view.byteLength - 4) {
+                const marker = view.getUint16(offset);
+                if (marker === 0xFFE0) { // APP0 (JFIF)
+                    const units = view.getUint8(offset + 11);
+                    const xDensity = view.getUint16(offset + 12);
+                    if (units === 1 && xDensity > 0) { // 1 = dots per inch (DPI)
+                        return xDensity;
                     }
-                    offset += 2 + length;
-                }
-            }
-        } catch (e) {
-            console.error("Erro ao ler DPI do JPEG:", e);
-        }
-    } else if (ext === 'png') {
-        try {
-            const buffer = await file.slice(0, 2048).arrayBuffer();
-            const view = new DataView(buffer);
-            if (view.getUint32(0) === 0x89504E47 && view.getUint32(4) === 0x0D0A1A0A) {
-                let offset = 8;
-                while (offset < view.byteLength - 12) {
-                    const length = view.getUint32(offset);
-                    const type = view.getUint32(offset + 4);
-                    if (type === 0x70485973) { // "pHYs"
-                        const ppuX = view.getUint32(offset + 8);
-                        const ppuY = view.getUint32(offset + 12);
-                        const unit = view.getUint8(offset + 16);
-                        if (unit === 1) { // pixels por metro
-                            const dpiX = Math.round(ppuX * 0.0254);
-                            const dpiY = Math.round(ppuY * 0.0254);
-                            return { x: dpiX || 300, y: dpiY || 300 };
-                        }
-                        break;
+                    if (units === 2 && xDensity > 0) { // 2 = dots per cm
+                        return Math.round(xDensity * 2.54);
                     }
-                    offset += 12 + length;
+                    break;
                 }
+                // Pular o segmento
+                const len = view.getUint16(offset + 2);
+                offset += 2 + len;
             }
-        } catch (e) {
-            console.error("Erro ao ler DPI do PNG:", e);
         }
+        
+        // Verifica se é PNG (começa com 89 50 4E 47)
+        if (view.byteLength > 8 && view.getUint32(0) === 0x89504E47) {
+            let offset = 8;
+            while (offset < view.byteLength - 12) {
+                const length = view.getUint32(offset);
+                const type = view.getUint32(offset + 4);
+                if (type === 0x70485973) { // pHYs chunk (physical pixel dimensions)
+                    const xPixelsPerMeter = view.getUint32(offset + 8);
+                    const unitSpecifier = view.getUint8(offset + 16);
+                    if (unitSpecifier === 1 && xPixelsPerMeter > 0) {
+                        return Math.round(xPixelsPerMeter * 0.0254); // Converter pixels por metro para DPI
+                    }
+                    break;
+                }
+                offset += 12 + length;
+            }
+        }
+    } catch (e) {
+        console.warn("Erro ao ler metadados de DPI:", e);
     }
-    return defaultDpi;
+    return 300; // Padrão de 300 DPI para artes gráficas profissionais
 }
 
+// ─── IMPOSIÇÃO ────────────────────────────────────────────────────────────────
 async function loadImpArtFile(file) {
     const ext = file.name.split('.').pop().toLowerCase();
     try {
@@ -1623,6 +2013,12 @@ async function loadImpArtFile(file) {
                 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            
+            // Salvar documento PDF e inicializar caches para paginação especial de Pdf Múltiplo
+            state.impArtPdfDoc = pdf;
+            state.impArtPagesCache = {};
+            state.impArtPagesRendering = {};
+
             const page = await pdf.getPage(1);
             const vp = page.getViewport({ scale: 1 });
 
@@ -1638,23 +2034,48 @@ async function loadImpArtFile(file) {
             state.impArtImage = off;
             state.impArtWidth = vp.width; // em pt
             state.impArtHeight = vp.height; // em pt
+            
+            // Se estiver em Pdf Múltiplo, atualiza limites
+            const schema = document.getElementById('imp-schema').value;
+            if (schema === "pdf_multiple") {
+                const impStart = document.getElementById('imp-start');
+                const impEnd = document.getElementById('imp-end');
+                if (impStart) {
+                    impStart.value = 1;
+                    impStart.setAttribute('disabled', 'true');
+                }
+                if (impEnd) {
+                    impEnd.value = pdf.numPages;
+                    impEnd.setAttribute('disabled', 'true');
+                }
+            }
         } else {
+            // Se for imagem normal, limpa referências de PDF
+            state.impArtPdfDoc = null;
+            state.impArtPagesCache = {};
+            state.impArtPagesRendering = {};
+
             const img = new Image();
             img.src = URL.createObjectURL(file);
             await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
-            state.impArtImage = img;
             
-            // Obter o DPI correto do arquivo de imagem
-            const dpi = await getImageDPI(file);
-            state.impArtWidth = (img.width / dpi.x) * 72; // converter pixels para pontos PDF
-            state.impArtHeight = (img.height / dpi.y) * 72;
+            // Obter o DPI da imagem a partir dos metadados
+            const dpi = await getDpi(file);
+            
+            state.impArtImage = img;
+            // Converter pixels para pontos PDF (1pt = 1/72 polegada, logo: px / DPI * 72)
+            state.impArtWidth = img.width * (72 / dpi);
+            state.impArtHeight = img.height * (72 / dpi);
         }
         toast('Arte carregada para preview!', 'success');
-        drawPreview();
+        updateImpSummary(); // Recalcular sumário e forçar redesenho do preview
     } catch (e) {
         toast('Erro ao carregar arte: ' + e.message, 'error');
         state.impArtImage = null;
-        drawPreview();
+        state.impArtPdfDoc = null;
+        state.impArtPagesCache = {};
+        state.impArtPagesRendering = {};
+        updateImpSummary();
     }
 }
 
@@ -1724,6 +2145,8 @@ function drawPreview() {
 
     document.getElementById('preview-sheet-num').textContent = `Folha 1 de ${total_sheets}`;
 
+    const isBack = state.previewFace === 'back';
+
     for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
             const P = row * cols + col;
@@ -1737,59 +2160,152 @@ function drawPreview() {
 
             if (item_index >= total_items) continue;
 
-            const cell_x0 = start_x + col * (item_w + gap_h);
+            // Para o verso da folha (tombamento horizontal), espelhamos as colunas fisicamente
+            const col_fisico = isBack ? (cols - 1 - col) : col;
+            const cell_x0 = start_x + col_fisico * (item_w + gap_h);
             const cell_y0 = start_y + row * (item_h + gap_v);
 
-            const cx0 = cell_x0 * scale;
-            const cy0 = cell_y0 * scale;
             const cw = item_w * scale;
             const ch = item_h * scale;
 
-            // Borda do item
+            // Centro da célula para rotação
+            const centerX = (cell_x0 + item_w / 2) * scale;
+            const centerY = (cell_y0 + item_h / 2) * scale;
+            
+            // Inverter a rotação da célula no verso para bater frente/verso
+            const cellRotationFrente = fmt.rotations ? (parseInt(fmt.rotations[P]) || 0) : 0;
+            const cellRotation = isBack ? ((360 - cellRotationFrente) % 360) : cellRotationFrente;
+
+            ctx.save();
+            ctx.translate(centerX, centerY);
+            if (cellRotation !== 0) {
+                ctx.rotate((cellRotation * Math.PI) / 180);
+            }
+
+            // Borda do item (desenhada em torno do centro 0,0)
             ctx.strokeStyle = '#cbd5e1';
             ctx.lineWidth = 0.5;
-            ctx.strokeRect(cx0, cy0, cw, ch);
+            ctx.strokeRect(-cw / 2, -ch / 2, cw, ch);
 
-            if (state.impArtImage) {
+            if (state.impArtImage || state.impArtPdfDoc) {
                 // Dimensões originais da arte
                 const art_orig_w = state.impArtWidth;
                 const art_orig_h = state.impArtHeight;
 
-                // Centralizar a arte na célula + aplicar offset do formato
+                // Centralizar a arte na célula + aplicar offset do formato (em relação ao centro da célula que é 0,0)
                 // (positivo H = direita, positivo V = para cima → negar Y)
-                let art_x0 = cell_x0 + (item_w - art_orig_w) / 2 + fmt_off_h;
-                let art_y0 = cell_y0 + (item_h - art_orig_h) / 2 - fmt_off_v;
-                let art_x1 = art_x0 + art_orig_w;
-                let art_y1 = art_y0 + art_orig_h;
+                const offH = fmt_off_h * scale;
+                const offV = -fmt_off_v * scale;
 
-                const dx = art_x0 * scale;
-                const dy = art_y0 * scale;
                 const dw = art_orig_w * scale;
                 const dh = art_orig_h * scale;
 
                 if (dw > 0 && dh > 0) {
-                    ctx.drawImage(state.impArtImage, 0, 0, state.impArtImage.width, state.impArtImage.height, dx, dy, dw, dh);
+                    if (state.impArtPdfDoc) {
+                        // Determinar qual página física real do PDF base exibir
+                        let pageNum = 1;
+                        if (schema === "pdf_multiple") {
+                            pageNum = isBack ? (item_index * 2 + 2) : (item_index * 2 + 1);
+                        } else {
+                            pageNum = isBack ? 2 : 1;
+                        }
+
+                        if (pageNum <= state.impArtPdfDoc.numPages) {
+                            if (!state.impArtPagesCache) state.impArtPagesCache = {};
+                            if (!state.impArtPagesRendering) state.impArtPagesRendering = {};
+
+                            const cacheKey = `page_${pageNum}`;
+                            const cachedPage = state.impArtPagesCache[cacheKey];
+                            if (cachedPage) {
+                                ctx.drawImage(cachedPage, offH - dw / 2, offV - dh / 2, dw, dh);
+                            } else {
+                                if (!state.impArtPagesRendering[cacheKey]) {
+                                    state.impArtPagesRendering[cacheKey] = true;
+                                    (async () => {
+                                        try {
+                                            const page = await state.impArtPdfDoc.getPage(pageNum);
+                                            const vp = page.getViewport({ scale: 1.5 });
+                                            const off = document.createElement('canvas');
+                                            off.width = vp.width;
+                                            off.height = vp.height;
+                                            const octx = off.getContext('2d');
+                                            octx.fillStyle = '#ffffff';
+                                            octx.fillRect(0, 0, off.width, off.height);
+                                            await page.render({ canvasContext: octx, viewport: vp }).promise;
+                                            
+                                            state.impArtPagesCache[cacheKey] = off;
+                                            drawPreview(); // Redesenhar o preview principal
+                                        } catch (err) {
+                                            console.error(`Erro ao renderizar pág. ${pageNum}:`, err);
+                                        } finally {
+                                            delete state.impArtPagesRendering[cacheKey];
+                                        }
+                                    })();
+                                }
+                                
+                                // Placeholder enquanto carrega a página
+                                ctx.fillStyle = '#f1f5f9';
+                                ctx.fillRect(offH - dw / 2, offV - dh / 2, dw, dh);
+                                ctx.strokeStyle = '#cbd5e1';
+                                ctx.lineWidth = 0.5;
+                                ctx.strokeRect(offH - dw / 2, offV - dh / 2, dw, dh);
+                                ctx.fillStyle = '#94a3b8';
+                                ctx.font = `${Math.max(6, Math.round(ch * 0.08))}px Inter`;
+                                ctx.textAlign = 'center';
+                                ctx.textBaseline = 'middle';
+                                ctx.fillText(`Carregando Pág. ${pageNum}...`, offH, offV);
+                            }
+                        } else {
+                            // Página excedente ou sem verso, desenha vazio
+                            ctx.fillStyle = '#ffffff';
+                            ctx.fillRect(offH - dw / 2, offV - dh / 2, dw, dh);
+                            ctx.strokeStyle = '#cbd5e1';
+                            ctx.lineWidth = 0.5;
+                            ctx.strokeRect(offH - dw / 2, offV - dh / 2, dw, dh);
+                        }
+                    } else if (state.impArtImage) {
+                        if (isBack) {
+                            // Imagem única não tem verso de arte
+                            ctx.fillStyle = '#ffffff';
+                            ctx.fillRect(offH - dw / 2, offV - dh / 2, dw, dh);
+                            ctx.strokeStyle = '#cbd5e1';
+                            ctx.lineWidth = 0.5;
+                            ctx.strokeRect(offH - dw / 2, offV - dh / 2, dw, dh);
+                        } else {
+                            ctx.drawImage(state.impArtImage, 0, 0, state.impArtImage.width, state.impArtImage.height, offH - dw / 2, offV - dh / 2, dw, dh);
+                        }
+                    }
                 }
             } else {
                 ctx.fillStyle = '#f8fafc';
-                ctx.fillRect(cx0, cy0, cw, ch);
+                ctx.fillRect(-cw / 2, -ch / 2, cw, ch);
                 ctx.strokeStyle = '#e2e8f0';
                 ctx.setLineDash([3, 3]);
-                ctx.strokeRect(cx0 + 2, cy0 + 2, cw - 4, ch - 4);
+                ctx.strokeRect(-cw / 2 + 2, -ch / 2 + 2, cw - 4, ch - 4);
                 ctx.setLineDash([]);
 
                 ctx.fillStyle = '#94a3b8';
                 ctx.font = `${Math.max(7, Math.round(ch * 0.12))}px Inter`;
                 ctx.textAlign = 'center';
-                ctx.fillText(`Posição ${P + 1}`, cx0 + cw / 2, cy0 + ch / 2);
+                ctx.textBaseline = 'middle';
+                ctx.fillText(`Posição ${P + 1}`, 0, 0);
             }
 
             // Elementos variáveis (VDP)
             if (num && num.elements) {
                 const val = start + item_index;
                 num.elements.forEach(el => {
-                    const el_x = cell_x0 + (el.x_mm * MM2PT);
-                    const el_y = cell_y0 + (el.y_mm * MM2PT);
+                    // Pular elementos que não são da face ativa
+                    if (isBack && el.face === 'front') return;
+                    if (!isBack && el.face === 'back') return;
+                    // Posição do elemento relativa ao canto superior esquerdo da célula
+                    const el_x = el.x_mm * MM2PT * scale;
+                    const el_y = el.y_mm * MM2PT * scale;
+                    
+                    // Converter para coordenadas relativas ao centro da célula (0,0)
+                    const el_x_rel = el_x - cw / 2;
+                    const el_y_rel = el_y - ch / 2;
+
                     const color = el.color || '#000000';
                     const rotation = el.rotation || 0;
 
@@ -1812,7 +2328,7 @@ function drawPreview() {
                     }
 
                     ctx.save();
-                    ctx.translate(el_x * scale, el_y * scale);
+                    ctx.translate(el_x_rel, el_y_rel);
                     ctx.rotate(rotation * Math.PI / 180);
 
                     if (el.type === 'TEXT' || el.type === 'FIXED') {
@@ -1875,6 +2391,8 @@ function drawPreview() {
                     ctx.restore();
                 });
             }
+
+            ctx.restore();
         }
     }
 
@@ -1901,7 +2419,52 @@ function updateImpSummary() {
             drawPreview();
         };
     }
-    if (num && num.csv_data && num.csv_data.length) {
+    const schema = document.getElementById('imp-schema').value;
+    const isPdfMultiple = (schema === "pdf_multiple");
+
+    // Atualizar modo de impressão no estado global
+    const printModeEl = document.getElementById('imp-print-mode');
+    state.printMode = printModeEl ? printModeEl.value : 'front';
+    
+    // Exibir/ocultar alternador de face para o preview
+    const faceContainer = document.getElementById('preview-face-container');
+    if (faceContainer) {
+        if (state.printMode === 'duplex') {
+            faceContainer.style.display = 'block';
+        } else {
+            faceContainer.style.display = 'none';
+            state.previewFace = 'front';
+            const btnFront = document.getElementById('btn-preview-front');
+            const btnBack = document.getElementById('btn-preview-back');
+            if (btnFront) {
+                btnFront.style.background = 'var(--blue)';
+                btnFront.style.color = 'white';
+            }
+            if (btnBack) {
+                btnBack.style.background = 'rgba(255,255,255,0.06)';
+                btnBack.style.color = 'var(--text-dim)';
+            }
+        }
+    }
+
+    if (isPdfMultiple) {
+        state.csvData = null;
+        state.csvFile = null;
+        const totalPages = state.impArtPdfDoc ? state.impArtPdfDoc.numPages : 1;
+        const finalItems = state.printMode === 'duplex' ? Math.ceil(totalPages / 2) : totalPages;
+        
+        // Travar e preencher campos
+        const impStart = document.getElementById('imp-start');
+        const impEnd = document.getElementById('imp-end');
+        if (impStart) {
+            impStart.value = 1;
+            impStart.setAttribute('disabled', 'true');
+        }
+        if (impEnd) {
+            impEnd.value = finalItems;
+            impEnd.setAttribute('disabled', 'true');
+        }
+    } else if (num && num.csv_data && num.csv_data.length) {
         state.csvData = num.csv_data;
         state.csvFile = null; // Banco embutido
         
@@ -1917,8 +2480,11 @@ function updateImpSummary() {
             impEnd.setAttribute('disabled', 'true');
         }
     } else {
-        state.csvData = null;
-        state.csvFile = null;
+        const csvFileEl = document.getElementById('csv-file');
+        if (!csvFileEl || !csvFileEl.files.length) {
+            state.csvData = null;
+            state.csvFile = null;
+        }
         
         const impStart = document.getElementById('imp-start');
         const impEnd = document.getElementById('imp-end');
@@ -1940,7 +2506,15 @@ function updateImpSummary() {
         return;
     }
 
-    const total = state.csvData ? state.csvData.length : (end - start + 1);
+    let total = 1;
+    if (isPdfMultiple) {
+        const totalPages = state.impArtPdfDoc ? state.impArtPdfDoc.numPages : 1;
+        total = state.printMode === 'duplex' ? Math.ceil(totalPages / 2) : totalPages;
+    } else if (state.csvData) {
+        total = state.csvData.length;
+    } else {
+        total = end - start + 1;
+    }
     const perSheet = fmt.cols * fmt.rows;
     const sheets = Math.ceil(total / perSheet);
 
@@ -1993,6 +2567,8 @@ function showFileInfo() {
     }
 }
 
+let impositionAbortController = null;
+
 window.runImposition = async function () {
     const fmtId = document.getElementById('imp-formato').value;
     const numId = document.getElementById('imp-numeracao').value;
@@ -2006,14 +2582,22 @@ window.runImposition = async function () {
     if (!impFile.files.length) return toast('Selecione a arte (PDF/JPG/PNG).', 'error');
     if (start > end) return toast('Número inicial deve ser menor que o final.', 'error');
 
+    const formato = state.formatos.find(f => f.id === fmtId);
+    const saida = state.saidas.find(s => s.id === saiId);
+    const numeracao = numId ? state.numeracoes.find(n => n.id === numId) : null;
+
     const payload = {
         formato_id: fmtId,
         numeracao_id: numId || null,
         saida_id: saiId,
+        formato: formato,
+        saida: saida,
+        numeracao: numeracao,
         seq_start: start,
         seq_end: end,
         seq_increment: 1,
-        schema
+        schema,
+        print_mode: state.printMode
     };
 
     const formData = new FormData();
@@ -2025,13 +2609,87 @@ window.runImposition = async function () {
 
     const overlay = document.getElementById('loading-overlay');
     const sub = document.getElementById('loading-sub');
-    const total = end - start + 1;
+    const pBar = document.getElementById('loading-progress-bar');
+    const pText = document.getElementById('loading-progress-text');
+
+    // Calcular o total correto de itens baseando-se no esquema
+    const isPdfMultiple = schema === "pdf_multiple";
+    let total = 1;
+    if (isPdfMultiple) {
+        const totalPages = state.impArtPdfDoc ? state.impArtPdfDoc.numPages : 1;
+        total = state.printMode === 'duplex' ? Math.ceil(totalPages / 2) : totalPages;
+    } else if (state.csvData) {
+        total = state.csvData.length;
+    } else {
+        total = end - start + 1;
+    }
+
     overlay.classList.add('active');
     sub.textContent = `Gerando ${total.toLocaleString('pt-BR')} itens...`;
+    if (pBar) pBar.style.width = '0%';
+    if (pText) pText.textContent = 'Iniciando... (0%)';
     document.getElementById('btn-impose').disabled = true;
 
+    // Instancia o AbortController e associa ao botão de cancelamento
+    impositionAbortController = new AbortController();
+    const cancelBtn = document.getElementById('btn-cancel-imposition');
+    if (cancelBtn) {
+        cancelBtn.onclick = () => {
+            if (impositionAbortController) {
+                impositionAbortController.abort();
+            }
+        };
+    }
+
+    let progressInterval = null;
+
     try {
-        const res = await fetch('/api/impose', { method: 'POST', body: formData });
+        let baseUrl = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : '';
+        
+        // Verifica se o Agente Local está ativo para processar a imposição localmente de forma instantânea (com timeout de 300ms)
+        let localActive = false;
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 300);
+            
+            const agentCheck = await fetch("http://localhost:9000/", { 
+                method: "GET",
+                signal: controller.signal 
+            }).catch(() => null);
+            
+            clearTimeout(timeoutId);
+            
+            if (agentCheck && agentCheck.ok) {
+                const checkData = await agentCheck.json().catch(() => ({}));
+                if (checkData.status === "running") {
+                    localActive = true;
+                }
+            }
+        } catch (_) {}
+
+        if (localActive) {
+            baseUrl = "http://localhost:9000";
+            console.log("[Imposition] Processando localmente na máquina do usuário para máxima velocidade");
+        } else {
+            console.log("[Imposition] Processando na nuvem (Render)");
+        }
+        
+        const headers = {};
+        if (typeof firebase !== 'undefined' && firebase.auth() && firebase.auth().currentUser) {
+            try {
+                const token = await firebase.auth().currentUser.getIdToken();
+                headers['Authorization'] = `Bearer ${token}`;
+            } catch (e) {
+                console.error("Erro ao obter Firebase ID Token para imposição:", e);
+            }
+        }
+
+        const res = await fetch(`${baseUrl}/api/impose`, { 
+            method: 'POST', 
+            headers: headers,
+            body: formData,
+            signal: impositionAbortController.signal
+        });
         if (!res.ok) {
             const err = await res.json();
             throw new Error(err.detail || 'Erro no servidor');
@@ -2047,12 +2705,17 @@ window.runImposition = async function () {
         document.body.removeChild(a);
         toast('PDF gerado com sucesso!', 'success');
     } catch (err) {
-        toast(`Erro: ${err.message}`, 'error');
+        if (err.name === 'AbortError') {
+            toast('Geração do PDF cancelada pelo usuário.', 'info');
+        } else {
+            toast(`Erro: ${err.message}`, 'error');
+        }
     } finally {
         overlay.classList.remove('active');
         document.getElementById('btn-impose').disabled = false;
+        impositionAbortController = null;
     }
-};
+};;
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 loadAll();
@@ -2608,3 +3271,768 @@ window.addCsvColumnElement = function(colName) {
     drawCanvas();
     selectElementCard(id);
 };
+
+// ─── LÓGICA DE AUTENTICAÇÃO E ADMINISTRAÇÃO ───────────────────────────────────
+let authMode = 'login'; // 'login' ou 'register'
+
+window.toggleAuthMode = function(e) {
+    if (e) e.preventDefault();
+    const title = document.querySelector('.auth-header h2');
+    const p = document.querySelector('.auth-header p');
+    const btnSubmit = document.getElementById('btn-auth-submit');
+    const toggleLink = document.getElementById('auth-toggle-link');
+    
+    if (authMode === 'login') {
+        authMode = 'register';
+        title.textContent = 'Ideal Imposition — Cadastro';
+        p.textContent = 'Crie sua conta para começar';
+        btnSubmit.textContent = 'Cadastrar';
+        toggleLink.textContent = 'Já tem uma conta? Entrar';
+    } else {
+        authMode = 'login';
+        title.textContent = 'Ideal Imposition';
+        p.textContent = 'Faça login para acessar o painel online';
+        btnSubmit.textContent = 'Entrar';
+        toggleLink.textContent = 'Criar uma nova conta';
+    }
+};
+
+window.handleAuthSubmit = async function(e) {
+    e.preventDefault();
+    const email = document.getElementById('auth-email').value.trim();
+    const password = document.getElementById('auth-password').value;
+    const btnSubmit = document.getElementById('btn-auth-submit');
+    
+    btnSubmit.disabled = true;
+    btnSubmit.textContent = authMode === 'login' ? 'Entrando...' : 'Cadastrando...';
+    
+    try {
+        if (authMode === 'login') {
+            await firebase.auth().signInWithEmailAndPassword(email, password);
+            toast('Login efetuado com sucesso!', 'success');
+        } else {
+            await firebase.auth().createUserWithEmailAndPassword(email, password);
+            toast('Conta criada com sucesso!', 'success');
+        }
+        document.getElementById('auth-overlay').classList.remove('active');
+        document.body.classList.remove('not-logged-in');
+    } catch (err) {
+        toast('Erro: ' + err.message, 'error');
+    } finally {
+        btnSubmit.disabled = false;
+        btnSubmit.textContent = authMode === 'login' ? 'Entrar' : 'Cadastrar';
+    }
+};
+
+window.handleGoogleLogin = async function() {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    const btnGoogle = document.getElementById('btn-google-login');
+    if (btnGoogle) btnGoogle.disabled = true;
+    
+    try {
+        await firebase.auth().signInWithPopup(provider);
+        toast('Login com Google efetuado com sucesso!', 'success');
+        document.getElementById('auth-overlay').classList.remove('active');
+        document.body.classList.remove('not-logged-in');
+    } catch (err) {
+        toast('Erro ao entrar com Google: ' + err.message, 'error');
+    } finally {
+        if (btnGoogle) btnGoogle.disabled = false;
+    }
+};
+
+window.handleSignOut = async function() {
+    try {
+        await firebase.auth().signOut();
+        toast('Logoff efetuado!', 'success');
+        location.reload();
+    } catch (e) {
+        toast('Erro ao sair: ' + e.message, 'error');
+    }
+};
+
+// Monitora o estado de autenticação do Firebase Auth
+document.addEventListener('DOMContentLoaded', () => {
+    if (typeof firebase !== 'undefined' && firebase.auth) {
+        firebase.auth().onAuthStateChanged(async (user) => {
+            if (user) {
+                // Logado
+                document.getElementById('auth-overlay').classList.remove('active');
+                document.body.classList.remove('not-logged-in');
+                
+                // Mostrar informações do perfil
+                const profileBar = document.getElementById('user-profile-bar');
+                const emailDisplay = document.getElementById('user-email-display');
+                if (profileBar) profileBar.style.display = 'block';
+                if (emailDisplay) emailDisplay.textContent = user.email;
+
+                // Obter claims personalizadas (para saber se é admin)
+                try {
+                    const idTokenResult = await user.getIdTokenResult();
+                    const isAdmin = idTokenResult.claims.admin === true;
+                    if (isAdmin) {
+                        document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'block');
+                    } else {
+                        document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
+                    }
+                } catch (e) {
+                    console.error("Erro ao ler Claims:", e);
+                }
+
+                // Carregar dados principais
+                loadAll();
+            } else {
+                // Deslogado
+                document.getElementById('auth-overlay').classList.add('active');
+                document.body.classList.add('not-logged-in');
+                
+                const profileBar = document.getElementById('user-profile-bar');
+                if (profileBar) profileBar.style.display = 'none';
+                document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
+            }
+        });
+    }
+});
+
+// Lógica do Painel de Administração (Lista usuários e altera permissões)
+window.loadAdminUsers = async function() {
+    const tbody = document.getElementById('tbody-admin-users');
+    if (!tbody) return;
+    
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Carregando usuários...</td></tr>';
+    
+    try {
+        const users = await api('GET', '/admin/users');
+        if (!users || !users.length) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Nenhum usuário retornado.</td></tr>';
+            return;
+        }
+        
+        tbody.innerHTML = users.map(u => `
+            <tr>
+                <td>
+                    <strong>${u.display_name}</strong><br>
+                    <small style="color: var(--text-dim);">${u.email}</small>
+                </td>
+                <td><code style="font-size:0.75rem; background:rgba(0,0,0,0.2); padding: 2px 6px; border-radius:4px;">${u.uid}</code></td>
+                <td>
+                    <span class="badge ${u.role === 'admin' ? 'badge-red' : (u.role === 'editor' ? 'badge-blue' : 'badge-teal')}">${u.role.toUpperCase()}</span>
+                </td>
+                <td>
+                    <select class="form-control" style="width: auto; display: inline-block; padding: 4px 8px; font-size: 0.8rem; height: 30px;" onchange="changeUserRole('${u.uid}', this.value)">
+                        <option value="user" ${u.role === 'user' ? 'selected' : ''}>User (Visualizador)</option>
+                        <option value="editor" ${u.role === 'editor' ? 'selected' : ''}>Editor</option>
+                        <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
+                    </select>
+                </td>
+            </tr>
+        `).join('');
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color: var(--red);">Erro: ${e.message}</td></tr>`;
+        toast('Erro ao obter usuários: ' + e.message, 'error');
+    }
+};
+
+window.changeUserRole = async function(uid, newRole) {
+    if (!confirm(`Deseja alterar a função deste usuário para ${newRole.toUpperCase()}?`)) {
+        loadAdminUsers();
+        return;
+    }
+    
+    try {
+        await api('POST', `/admin/users/${uid}/role`, { role: newRole });
+        toast('Função de usuário atualizada!', 'success');
+        loadAdminUsers();
+    } catch (e) {
+        toast('Erro ao alterar função: ' + e.message, 'error');
+        loadAdminUsers();
+    }
+};
+
+// Vincula clique na aba de administração para carregar usuários automaticamente
+document.getElementById('nav-admin')?.addEventListener('click', () => {
+    loadAdminUsers();
+});
+
+// ─── LÓGICA DA TELA DE AMOSTRAS ──────────────────────────────────────────────
+let amostraArteImage = null;
+let amostraArteWidth = 0;
+let amostraArteHeight = 0;
+
+// Helper para obter dimensões do formato ativo em Amostras
+function getAmostraFormato() {
+    const corId = document.getElementById('amostra-cor').value;
+    const numId = document.getElementById('amostra-numeracao').value;
+    
+    if (numId) {
+        const num = state.numeracoes.find(n => n.id === numId);
+        if (num) {
+            const fmt = state.formatos.find(f => f.id === num.formato_id);
+            if (fmt) return fmt;
+        }
+    }
+    if (corId) {
+        const cor = state.cores.find(c => c.id === corId);
+        if (cor) {
+            // Retorna dimensões do formato correspondentes à cor
+            return {
+                width_mm: cor.width_mm,
+                height_mm: cor.height_mm
+            };
+        }
+    }
+    return null;
+}
+
+// Helper para calcular a escala (px/mm) ideal para que todos os canvas tenham o mesmo tamanho e mantenham paridade 1:1 física
+function getAmostraScale(fmt, canvasElement) {
+    // Para manter a paridade 1:1 física absoluta de escala entre todas as 3 janelas fonte e a combinada,
+    // a escala (pixels por milímetro) deve ser uma constante global calculada com base no formato unificado.
+    const activeFmt = getAmostraFormato();
+    if (!activeFmt) return 3.5;
+    
+    // Usamos o container da Amostra Combinada ou o container ativo para definir a escala padrão
+    const refCanvas = document.getElementById('amostra-comb-canvas') || canvasElement;
+    if (!refCanvas) return 3.5;
+    
+    const containerW = refCanvas.parentElement.clientWidth - 30; // compensar padding
+    return containerW / activeFmt.width_mm;
+}
+
+window.onAmostraCorSelect = async function() {
+    const corId = document.getElementById('amostra-cor').value;
+    const canvas = document.getElementById('amostra-cor-canvas');
+    const empty = document.getElementById('amostra-cor-empty');
+    const badge = document.getElementById('amostra-cor-badge');
+    
+    if (!corId) {
+        if (canvas) canvas.style.display = 'none';
+        if (empty) {
+            empty.style.display = 'block';
+            empty.innerHTML = `<div style="font-size: 2.5rem; margin-bottom: 12px; opacity: 0.7;">🎨</div><p style="font-size: 0.85rem; font-weight: 500;">Selecione uma cor para visualizar.</p>`;
+        }
+        if (badge) badge.textContent = 'Sem Cor';
+        return;
+    }
+
+    const cor = state.cores.find(c => c.id === corId);
+    if (!cor) return;
+
+    if (badge) badge.textContent = cor.name;
+
+    if (cor.pdf_base64) {
+        if (empty) {
+            empty.style.display = 'block';
+            empty.innerHTML = '<div class="spinner"></div><p style="margin-top:10px; font-size:0.82rem; font-weight:500;">Carregando PDF da Cor...</p>';
+        }
+        try {
+            const base64Data = cor.pdf_base64.includes('base64,') ? cor.pdf_base64.split('base64,')[1] : cor.pdf_base64;
+            const binStr = atob(base64Data);
+            const bytes = new Uint8Array(binStr.length);
+            for (let i = 0; i < binStr.length; i++) {
+                bytes[i] = binStr.charCodeAt(i);
+            }
+
+            const loadingTask = pdfjsLib.getDocument({ data: bytes });
+            const pdf = await loadingTask.promise;
+            const page = await pdf.getPage(1);
+            
+            // Usar escala proporcional unificada baseada no formato da cor
+            const fmt = getAmostraFormato();
+            const scalePxMm = getAmostraScale(fmt, canvas);
+            
+            const viewport = page.getViewport({ scale: 1.0 });
+            // Converter mm para pontos PDF (72 / 25.4 = 2.8346) para saber a escala certa do renderizador
+            const pdfScale = (fmt.width_mm * 2.8346) / viewport.width;
+            
+            // Escala final de renderização
+            const scaledViewport = page.getViewport({ scale: pdfScale * (scalePxMm / 2.8346) });
+            
+            const context = canvas.getContext('2d');
+            canvas.width = scaledViewport.width;
+            canvas.height = scaledViewport.height;
+            
+            await page.render({ canvasContext: context, viewport: scaledViewport }).promise;
+            
+            if (empty) empty.style.display = 'none';
+            canvas.style.display = 'block';
+            
+            // Renderiza amostra combinada
+            renderAmostraCombinada();
+        } catch (e) {
+            console.error("Erro ao renderizar cor na amostra:", e);
+            if (empty) {
+                empty.style.display = 'block';
+                empty.innerHTML = '<div style="font-size: 2rem; color: var(--red); margin-bottom:10px;">✕</div><p style="font-size:0.85rem; font-weight:500;">Erro ao carregar PDF de referência da cor.</p>';
+            }
+            canvas.style.display = 'none';
+            renderAmostraCombinada();
+        }
+    } else {
+        if (canvas) canvas.style.display = 'none';
+        if (empty) {
+            empty.style.display = 'block';
+            empty.innerHTML = `<div style="font-size: 2.5rem; margin-bottom: 12px; opacity: 0.7;">🎨</div><p style="font-size: 0.85rem; font-weight: 500;">Esta cor não possui PDF de referência cadastrado.</p>`;
+        }
+        renderAmostraCombinada();
+    }
+};
+
+window.onAmostraNumeracaoSelect = function() {
+    const numId = document.getElementById('amostra-numeracao').value;
+    const canvas = document.getElementById('amostra-num-canvas');
+    const empty = document.getElementById('amostra-num-empty');
+    const badge = document.getElementById('amostra-num-badge');
+
+    if (!numId) {
+        if (canvas) canvas.style.display = 'none';
+        if (empty) empty.style.display = 'block';
+        if (badge) badge.textContent = 'Sem Numeração';
+        renderAmostraCombinada();
+        return;
+    }
+
+    const num = state.numeracoes.find(n => n.id === numId);
+    if (!num) return;
+
+    if (badge) badge.textContent = num.name;
+
+    const fmt = state.formatos.find(f => f.id === num.formato_id);
+    if (!fmt) {
+        if (canvas) canvas.style.display = 'none';
+        if (empty) {
+            empty.style.display = 'block';
+            empty.innerHTML = `<p style="font-size:0.85rem; color:var(--red);">Formato base desta numeração foi excluído.</p>`;
+        }
+        renderAmostraCombinada();
+        return;
+    }
+
+    // Desenhar a numeração fictícia no Canvas de Amostras
+    if (empty) empty.style.display = 'none';
+    canvas.style.display = 'block';
+
+    // Obter escala unificada proporcional
+    const S = getAmostraScale(fmt, canvas);
+    canvas.width = Math.round(fmt.width_mm * S);
+    canvas.height = Math.round(fmt.height_mm * S);
+    const ctx = canvas.getContext('2d');
+
+    // Fundo branco limpo
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Contorno do formato
+    ctx.strokeStyle = '#64748b';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0, 0, canvas.width, canvas.height);
+
+    // Desenhar elementos cadastrados
+    const MM2PT = 2.8346;
+    if (num.elements) {
+        num.elements.forEach(el => {
+            const x = el.x_mm * S;
+            const y = el.y_mm * S;
+            const color = el.color || '#000000';
+            const rot = (el.rotation || 0) * Math.PI / 180;
+
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(rot);
+
+            if (el.type === 'TEXT' || el.type === 'FIXED') {
+                const fs = (el.font_size || 12) * S / 2.8346;
+                let fontStyle = 'Inter, sans-serif';
+                if (el.font_name === 'helv-bold') fontStyle = 'bold Inter, sans-serif';
+                else if (el.font_name === 'times') fontStyle = 'Times New Roman, serif';
+                else if (el.font_name === 'times-bold') fontStyle = 'bold Times New Roman, serif';
+                else if (el.font_name === 'cour') fontStyle = 'Courier New, monospace';
+                else if (el.font_name === 'cour-bold') fontStyle = 'bold Courier New, monospace';
+
+                ctx.font = `${fs}px ${fontStyle}`;
+                ctx.fillStyle = color;
+                
+                let label = '';
+                if (el.type === 'FIXED') {
+                    label = el.fixed_value || 'TEXTO';
+                } else {
+                    const padVal = typeof el.pad !== 'undefined' ? el.pad : 6;
+                    label = `${el.prefix || ''}${String(1).padStart(padVal, '0')}${el.suffix || ''}`;
+                }
+                ctx.fillText(label, 0, fs);
+            } else if (el.type === 'QR') {
+                const sz = (el.size_mm || 15) * S;
+                ctx.fillStyle = color;
+                ctx.fillRect(0, 0, sz, sz);
+                ctx.fillStyle = '#ffffff';
+                const cell = sz / 7;
+                for (const [cx, cy] of [[0, 0], [4, 0], [0, 4]]) {
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(cx * cell, cy * cell, 3 * cell, 3 * cell);
+                    ctx.fillStyle = color;
+                    ctx.fillRect(cx * cell + cell * 0.5, cy * cell + cell * 0.5, 2 * cell, 2 * cell);
+                }
+            } else if (el.type === 'BARCODE') {
+                const bw = (el.width_mm || 40) * S;
+                const bh = (el.height_mm || 10) * S;
+                ctx.fillStyle = color;
+                const barW = bw / 40;
+                const pattern = [1, 0, 1, 1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 0, 1, 0, 1, 1];
+                for (let i = 0; i < pattern.length; i++) {
+                    if (pattern[i]) ctx.fillRect(i * barW, 0, barW * 0.7, bh);
+                }
+            } else if (el.type === 'PICOTE') {
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 2.0;
+                ctx.setLineDash([6, 3]);
+                ctx.beginPath();
+                ctx.moveTo(0, -y);
+                ctx.lineTo(0, canvas.height - y);
+                ctx.stroke();
+            } else if (el.type === 'SVG') {
+                const sz_w = (el.width_mm || 20) * S;
+                const sz_h = (el.height_mm || 20) * S;
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 1;
+                ctx.strokeRect(0, 0, sz_w, sz_h);
+                ctx.font = `${Math.max(6, sz_h * 0.15)}px Inter, sans-serif`;
+                ctx.fillStyle = color;
+                ctx.textAlign = 'center';
+                ctx.fillText('SVG', sz_w / 2, sz_h / 2 + (sz_h * 0.05));
+            }
+            ctx.restore();
+        });
+    }
+
+    renderAmostraCombinada();
+};
+
+window.clearAmostraArteFile = function() {
+    amostraArteImage = null;
+    amostraArteWidth = 0;
+    amostraArteHeight = 0;
+    document.getElementById('amostra-arte-file').value = '';
+    document.getElementById('amostra-arte-file-name').textContent = '';
+    document.getElementById('btn-remove-amostra-arte').style.display = 'none';
+    document.getElementById('amostra-arte-badge').textContent = 'Sem Arte';
+    
+    const canvas = document.getElementById('amostra-arte-canvas');
+    const empty = document.getElementById('amostra-arte-empty');
+    if (canvas) canvas.style.display = 'none';
+    if (empty) {
+        empty.style.display = 'block';
+        empty.innerHTML = `<div style="font-size: 2.5rem; margin-bottom: 12px; opacity: 0.7;">🖼️</div><p style="font-size: 0.85rem; font-weight: 500;">Carregue uma arte em PDF ou imagem para visualizar.</p>`;
+    }
+    renderAmostraCombinada();
+};
+
+async function loadAmostraArteFile(file) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    const canvas = document.getElementById('amostra-arte-canvas');
+    const empty = document.getElementById('amostra-arte-empty');
+    const badge = document.getElementById('amostra-arte-badge');
+
+    if (badge) badge.textContent = file.name;
+    if (empty) {
+        empty.style.display = 'block';
+        empty.innerHTML = '<div class="spinner"></div><p style="margin-top:10px; font-size:0.82rem; font-weight:500;">Processando Arte...</p>';
+    }
+
+    try {
+        const fmt = getAmostraFormato();
+        const S = getAmostraScale(fmt, canvas);
+
+        if (ext === 'pdf') {
+            if (typeof pdfjsLib === 'undefined') {
+                return toast('PDF.js não disponível. Use JPG/PNG.', 'error');
+            }
+            pdfjsLib.GlobalWorkerOptions.workerSrc =
+                'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            const page = await pdf.getPage(1);
+            
+            const vp = page.getViewport({ scale: 1.0 });
+            
+            // Se tivermos um formato ativo, escala a arte para o mesmo tamanho proporcional
+            let pdfScale = 1.0;
+            if (fmt) {
+                pdfScale = (fmt.width_mm * 2.8346) / vp.width;
+            }
+            
+            const scaledViewport = page.getViewport({ scale: pdfScale * (S / 2.8346) });
+            
+            const context = canvas.getContext('2d');
+            canvas.width = scaledViewport.width;
+            canvas.height = scaledViewport.height;
+            
+            await page.render({ canvasContext: context, viewport: scaledViewport }).promise;
+        } else {
+            const img = new Image();
+            img.src = URL.createObjectURL(file);
+            await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+            
+            // Adotar 300 DPI se não conseguirmos ler
+            const dpi = 300;
+            const originalW_mm = (img.width / dpi) * 25.4;
+            const originalH_mm = (img.height / dpi) * 25.4;
+            
+            // Usar o tamanho do formato (se houver) ou o tamanho físico da imagem na mesma escala S
+            const targetW = fmt ? fmt.width_mm : originalW_mm;
+            const targetH = fmt ? fmt.height_mm : originalH_mm;
+            
+            canvas.width = Math.round(targetW * S);
+            canvas.height = Math.round(targetH * S);
+            const context = canvas.getContext('2d');
+            
+            // Desenhar a imagem preenchendo/centralizando proporcionalmente se as dimensões diferirem do formato
+            context.drawImage(img, 0, 0, canvas.width, canvas.height);
+        }
+
+        if (empty) empty.style.display = 'none';
+        if (canvas) canvas.style.display = 'block';
+        
+        document.getElementById('btn-remove-amostra-arte').style.display = 'inline-flex';
+        document.getElementById('amostra-arte-file-name').textContent = '📎 ' + file.name;
+        toast('Arte de amostra carregada!', 'success');
+        renderAmostraCombinada();
+    } catch (e) {
+        toast('Erro ao carregar arte: ' + e.message, 'error');
+        clearAmostraArteFile();
+    }
+}
+
+// Função para renderizar a Amostra Combinada (Cor + Arte + Numeração) com Multiply
+function renderAmostraCombinada() {
+    const canvasComb = document.getElementById('amostra-comb-canvas');
+    const emptyComb = document.getElementById('amostra-comb-empty');
+    if (!canvasComb) return;
+
+    const corCanvas = document.getElementById('amostra-cor-canvas');
+    const arteCanvas = document.getElementById('amostra-arte-canvas');
+    const numCanvas = document.getElementById('amostra-num-canvas');
+
+    const corId = document.getElementById('amostra-cor').value;
+    const numId = document.getElementById('amostra-numeracao').value;
+    const hasArte = document.getElementById('amostra-arte-file').files.length > 0;
+
+    // Se nenhuma camada estiver selecionada/carregada, esconde o canvas e mostra o estado vazio
+    if (!corId && !numId && !hasArte) {
+        canvasComb.style.display = 'none';
+        if (emptyComb) emptyComb.style.display = 'block';
+        return;
+    }
+
+    const fmt = getAmostraFormato();
+    if (!fmt) {
+        canvasComb.style.display = 'none';
+        if (emptyComb) emptyComb.style.display = 'block';
+        return;
+    }
+
+    // A escala global unificada que mantém a paridade física 1:1 absoluta
+    const S = getAmostraScale(fmt, canvasComb);
+
+    // O canvas de Amostra Combinada deve possuir o tamanho físico estrito da Cor
+    const cor = state.cores.find(c => c.id === corId);
+    let targetW = fmt.width_mm;
+    let targetH = fmt.height_mm;
+    if (cor) {
+        targetW = cor.width_mm;
+        targetH = cor.height_mm;
+    }
+
+    if (emptyComb) emptyComb.style.display = 'none';
+    canvasComb.style.display = 'block';
+
+    const finalWidth = Math.round(targetW * S);
+    const finalHeight = Math.round(targetH * S);
+
+    canvasComb.width = finalWidth;
+    canvasComb.height = finalHeight;
+
+    const ctx = canvasComb.getContext('2d');
+    ctx.clearRect(0, 0, finalWidth, finalHeight);
+
+    // Resetar composite operation
+    ctx.globalCompositeOperation = 'source-over';
+
+    // 1. Desenhar a Camada 1: Cor (se estiver disponível, centralizada no canvasComb caso divirjam)
+    if (corId && corCanvas && corCanvas.style.display !== 'none' && corCanvas.width > 0) {
+        const dx = (finalWidth - corCanvas.width) / 2;
+        const dy = (finalHeight - corCanvas.height) / 2;
+        ctx.drawImage(corCanvas, dx, dy, corCanvas.width, corCanvas.height);
+    } else {
+        // Se não tiver cor selecionada, desenha uma base branca para podermos visualizar as outras camadas
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, finalWidth, finalHeight);
+    }
+
+    // 2. Desenhar a Camada 2: Arte com efeito similar ao Photoshop Multiply (lendo a dimensão e centralizando em um canvas intermediário do tamanho da Cor)
+    if (hasArte && arteCanvas && arteCanvas.style.display !== 'none' && arteCanvas.width > 0) {
+        // Obter valores de ajuste da interface
+        const satVal = document.getElementById('amostra-sat') ? document.getElementById('amostra-sat').value : 100;
+        const conVal = document.getElementById('amostra-con') ? document.getElementById('amostra-con').value : 100;
+        const briVal = document.getElementById('amostra-bri') ? document.getElementById('amostra-bri').value : 100;
+        const shpVal = document.getElementById('amostra-shp') ? document.getElementById('amostra-shp').value : 0;
+
+        // Criar um canvas temporário do tamanho exato da Cor
+        const tempArteCanvas = document.createElement('canvas');
+        tempArteCanvas.width = finalWidth;
+        tempArteCanvas.height = finalHeight;
+        const tempArteCtx = tempArteCanvas.getContext('2d');
+        
+        // Aplicar filtros de cores nativos via Canvas context filter (Saturação, Contraste, Brilho)
+        tempArteCtx.filter = `saturate(${satVal}%) contrast(${conVal}%) brightness(${briVal}%)`;
+
+        // Desenha a arte original centralizada no canvas temporário
+        const dx = (finalWidth - arteCanvas.width) / 2;
+        const dy = (finalHeight - arteCanvas.height) / 2;
+        tempArteCtx.drawImage(arteCanvas, dx, dy, arteCanvas.width, arteCanvas.height);
+        
+        // Resetar o filtro para futuras operações
+        tempArteCtx.filter = 'none';
+        
+        // Aplicar efeito Sharpen (Nitidez) usando convolução proporcional ao valor (0% a 100%)
+        if (shpVal > 0) {
+            try {
+                const imgData = tempArteCtx.getImageData(0, 0, finalWidth, finalHeight);
+                const data = imgData.data;
+                const width = imgData.width;
+                const height = imgData.height;
+                
+                // Criar cópia para ler os valores originais
+                const copy = new Uint8ClampedArray(data);
+                
+                // Fator de nitidez proporcional ao controle (máximo 1.8 de atenuação negativa)
+                const factor = (shpVal / 100) * 1.8;
+                const centerWeight = 1 + (4 * factor);
+                
+                // Matriz de convolução dinâmica:
+                //  0     -factor      0
+                // -factor centerWeight -factor
+                //  0     -factor      0
+                const weights = [
+                     0,      -factor,  0,
+                  -factor, centerWeight, -factor,
+                     0,      -factor,  0
+                ];
+                
+                const side = Math.round(Math.sqrt(weights.length));
+                const halfSide = Math.floor(side / 2);
+                
+                // Convolução de pixel por pixel
+                for (let y = 1; y < height - 1; y++) {
+                    for (let x = 1; x < width - 1; x++) {
+                        const sy = y;
+                        const sx = x;
+                        const dstOff = (y * width + x) * 4;
+                        
+                        let r = 0, g = 0, b = 0;
+                        for (let cy = 0; cy < side; cy++) {
+                            for (let cx = 0; cx < side; cx++) {
+                                const scy = sy + cy - halfSide;
+                                const scx = sx + cx - halfSide;
+                                const srcOff = (scy * width + scx) * 4;
+                                const wt = weights[cy * side + cx];
+                                
+                                r += copy[srcOff] * wt;
+                                g += copy[srcOff + 1] * wt;
+                                b += copy[srcOff + 2] * wt;
+                            }
+                        }
+                        
+                        data[dstOff] = Math.min(255, Math.max(0, r));
+                        data[dstOff + 1] = Math.min(255, Math.max(0, g));
+                        data[dstOff + 2] = Math.min(255, Math.max(0, b));
+                    }
+                }
+                tempArteCtx.putImageData(imgData, 0, 0);
+            } catch (e) {
+                console.error("Erro ao aplicar filtro de nitidez (sharpen):", e);
+            }
+        }
+        
+        // Aplica o canvas temporário com multiply
+        ctx.save();
+        ctx.globalCompositeOperation = 'multiply';
+        ctx.drawImage(tempArteCanvas, 0, 0);
+        ctx.restore();
+    }
+
+    // 3. Desenhar a Camada 3: Numeração com efeito similar ao Photoshop Multiply (lendo a dimensão e centralizando em um canvas intermediário do tamanho da Cor)
+    if (numId && numCanvas && numCanvas.style.display !== 'none' && numCanvas.width > 0) {
+        // Criar um canvas temporário do tamanho exato da Cor
+        const tempNumCanvas = document.createElement('canvas');
+        tempNumCanvas.width = finalWidth;
+        tempNumCanvas.height = finalHeight;
+        const tempNumCtx = tempNumCanvas.getContext('2d');
+        
+        // Desenha a numeração original centralizada no canvas temporário
+        const dx = (finalWidth - numCanvas.width) / 2;
+        const dy = (finalHeight - numCanvas.height) / 2;
+        tempNumCtx.drawImage(numCanvas, dx, dy, numCanvas.width, numCanvas.height);
+        
+        // Aplica o canvas temporário com multiply
+        ctx.save();
+        ctx.globalCompositeOperation = 'multiply';
+        ctx.drawImage(tempNumCanvas, 0, 0);
+        ctx.restore();
+    }
+
+    // Borda final da amostra
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(0, 0, canvasComb.width, canvasComb.height);
+    ctx.restore();
+}
+window.renderAmostraCombinada = renderAmostraCombinada;
+
+// Configuração de listeners para Amostras
+document.addEventListener('DOMContentLoaded', () => {
+    const amArteInp = document.getElementById('amostra-arte-file');
+    if (amArteInp) {
+        amArteInp.addEventListener('change', e => {
+            if (e.target.files[0]) loadAmostraArteFile(e.target.files[0]);
+        });
+    }
+});
+
+(function () {
+    const amArteInp = document.getElementById('amostra-arte-file');
+    if (amArteInp && !amArteInp._listenerSet) {
+        amArteInp.addEventListener('change', e => {
+            if (e.target.files[0]) loadAmostraArteFile(e.target.files[0]);
+        });
+        amArteInp._listenerSet = true;
+    }
+})();
+
+window.setPreviewFace = function (face) {
+    state.previewFace = face;
+    const btnFront = document.getElementById('btn-preview-front');
+    const btnBack = document.getElementById('btn-preview-back');
+    if (face === 'front') {
+        if (btnFront) {
+            btnFront.style.background = 'var(--blue)';
+            btnFront.style.color = 'white';
+        }
+        if (btnBack) {
+            btnBack.style.background = 'rgba(255,255,255,0.06)';
+            btnBack.style.color = 'var(--text-dim)';
+        }
+    } else {
+        if (btnFront) {
+            btnFront.style.background = 'rgba(255,255,255,0.06)';
+            btnFront.style.color = 'var(--text-dim)';
+        }
+        if (btnBack) {
+            btnBack.style.background = 'var(--blue)';
+            btnBack.style.color = 'white';
+        }
+    }
+    drawPreview();
+};
+
