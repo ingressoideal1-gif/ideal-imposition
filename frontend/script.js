@@ -515,34 +515,74 @@ function onCorFormatoSelect() {
 window.onCorFormatoSelect = onCorFormatoSelect;
 
 function renderCores() {
-    const tbody = document.getElementById('tbody-cores');
+    const container = document.getElementById('cores-grouped-container');
     const empty = document.getElementById('empty-cores');
-    if (!tbody) return;
+    if (!container) return;
+    
     if (!state.cores || !state.cores.length) {
-        tbody.innerHTML = '';
+        container.innerHTML = '';
         if (empty) empty.style.display = 'block';
         return;
     }
     if (empty) empty.style.display = 'none';
-    tbody.innerHTML = state.cores.map(c => {
-        const fmt = state.formatos.find(f => f.id === c.formato_id);
-        const fmtName = fmt ? fmt.name : 'Formato Excluído';
-        const pdfLink = c.pdf_base64 
-            ? `<a href="${c.pdf_base64}" download="${c.pdf_filename || 'referencia.pdf'}" class="badge badge-teal" style="text-decoration:none;" onclick="event.stopPropagation();">📥 Baixar PDF</a>`
-            : '<span style="color:var(--text-faint)">Sem arquivo</span>';
-            
-        return `
-        <tr style="cursor: pointer;" onclick="renderPdfPreview('${c.pdf_base64 || ''}')" title="Clique para visualizar o PDF">
-            <td><strong>${c.name}</strong></td>
-            <td>${fmtName}</td>
-            <td>${c.width_mm} × ${c.height_mm} mm</td>
-            <td>${pdfLink}</td>
-            <td class="actions-cell" onclick="event.stopPropagation();">
-                <button class="btn btn-sm btn-ghost" onclick="editCor('${c.id}')">✏️ Editar</button>
-                <button class="btn btn-danger btn-sm" onclick="deleteCor('${c.id}')">🗑️</button>
-            </td>
-        </tr>
-    `}).join('');
+
+    // Agrupar cores por formato_id
+    const grouped = {};
+    state.cores.forEach(c => {
+        if (!grouped[c.formato_id]) {
+            grouped[c.formato_id] = [];
+        }
+        grouped[c.formato_id].push(c);
+    });
+
+    let html = '';
+    
+    // Obter todos os formatos que possuem cores
+    Object.keys(grouped).forEach(formatoId => {
+        const fmt = state.formatos.find(f => f.id === formatoId);
+        const fmtName = fmt ? fmt.name : 'Formato Excluído/Não Identificado';
+        const coresDoFormato = grouped[formatoId];
+
+        html += `
+            <div class="card" style="margin-bottom: 24px;">
+                <div class="card-header" style="background: rgba(255,255,255,0.02); border-bottom: 1px solid var(--border);">
+                    <span class="card-title">📐 ${fmtName}</span>
+                    <span class="badge badge-teal">${coresDoFormato.length} ${coresDoFormato.length === 1 ? 'cor' : 'cores'}</span>
+                </div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Nome da Cor</th>
+                            <th>Tamanho</th>
+                            <th>Arquivo PDF</th>
+                            <th style="text-align: right; width: 120px;">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${coresDoFormato.map(c => {
+                            const pdfLink = c.pdf_base64 
+                                ? `<a href="${c.pdf_base64}" download="${c.pdf_filename || 'referencia.pdf'}" class="badge badge-teal" style="text-decoration:none;" onclick="event.stopPropagation();">📥 Baixar PDF</a>`
+                                : '<span style="color:var(--text-faint)">Sem arquivo</span>';
+                            
+                            return `
+                                <tr style="cursor: pointer;" onclick="editCor('${c.id}')" title="Clique para editar/visualizar esta cor">
+                                    <td><strong>${c.name}</strong></td>
+                                    <td>${c.width_mm} × ${c.height_mm} mm</td>
+                                    <td>${pdfLink}</td>
+                                    <td class="actions-cell" style="text-align: right;" onclick="event.stopPropagation();">
+                                        <button class="btn btn-sm btn-ghost" onclick="editCor('${c.id}')">✏️ Editar</button>
+                                        <button class="btn btn-danger btn-sm" onclick="deleteCor('${c.id}')">🗑️</button>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    });
+
+    container.innerHTML = html;
 }
 window.renderCores = renderCores;
 
