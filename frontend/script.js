@@ -3520,6 +3520,60 @@ function renderAmostraCombinada() {
         const dy = (finalHeight - arteCanvas.height) / 2;
         tempArteCtx.drawImage(arteCanvas, dx, dy, arteCanvas.width, arteCanvas.height);
         
+        // Aplicar efeito Sharpen (Nitidez) usando convolução
+        try {
+            const imgData = tempArteCtx.getImageData(0, 0, finalWidth, finalHeight);
+            const data = imgData.data;
+            const width = imgData.width;
+            const height = imgData.height;
+            
+            // Criar cópia para ler os valores originais
+            const copy = new Uint8ClampedArray(data);
+            
+            // Matriz de convolução Sharpen (Nitidez clássica)
+            //  0  -1   0
+            // -1   5  -1
+            //  0  -1   0
+            const weights = [
+                 0, -1.2,  0,
+              -1.2,  5.8, -1.2,
+                 0, -1.2,  0
+            ];
+            
+            const side = Math.round(Math.sqrt(weights.length));
+            const halfSide = Math.floor(side / 2);
+            
+            // Convolução de pixel por pixel
+            for (let y = 1; y < height - 1; y++) {
+                for (let x = 1; x < width - 1; x++) {
+                    const sy = y;
+                    const sx = x;
+                    const dstOff = (y * width + x) * 4;
+                    
+                    let r = 0, g = 0, b = 0;
+                    for (let cy = 0; cy < side; cy++) {
+                        for (let cx = 0; cx < side; cx++) {
+                            const scy = sy + cy - halfSide;
+                            const scx = sx + cx - halfSide;
+                            const srcOff = (scy * width + scx) * 4;
+                            const wt = weights[cy * side + cx];
+                            
+                            r += copy[srcOff] * wt;
+                            g += copy[srcOff + 1] * wt;
+                            b += copy[srcOff + 2] * wt;
+                        }
+                    }
+                    
+                    data[dstOff] = Math.min(255, Math.max(0, r));
+                    data[dstOff + 1] = Math.min(255, Math.max(0, g));
+                    data[dstOff + 2] = Math.min(255, Math.max(0, b));
+                }
+            }
+            tempArteCtx.putImageData(imgData, 0, 0);
+        } catch (e) {
+            console.error("Erro ao aplicar filtro de nitidez (sharpen):", e);
+        }
+        
         // Aplica o canvas temporário com multiply
         ctx.save();
         ctx.globalCompositeOperation = 'multiply';
