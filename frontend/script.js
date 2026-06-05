@@ -3187,6 +3187,9 @@ window.onAmostraCorSelect = async function() {
             
             if (empty) empty.style.display = 'none';
             canvas.style.display = 'block';
+            
+            // Renderiza amostra combinada
+            renderAmostraCombinada();
         } catch (e) {
             console.error("Erro ao renderizar cor na amostra:", e);
             if (empty) {
@@ -3194,6 +3197,7 @@ window.onAmostraCorSelect = async function() {
                 empty.innerHTML = '<div style="font-size: 2rem; color: var(--red); margin-bottom:10px;">✕</div><p style="font-size:0.85rem; font-weight:500;">Erro ao carregar PDF de referência da cor.</p>';
             }
             canvas.style.display = 'none';
+            renderAmostraCombinada();
         }
     } else {
         if (canvas) canvas.style.display = 'none';
@@ -3201,6 +3205,7 @@ window.onAmostraCorSelect = async function() {
             empty.style.display = 'block';
             empty.innerHTML = `<div style="font-size: 2.5rem; margin-bottom: 12px; opacity: 0.7;">🎨</div><p style="font-size: 0.85rem; font-weight: 500;">Esta cor não possui PDF de referência cadastrado.</p>`;
         }
+        renderAmostraCombinada();
     }
 };
 
@@ -3214,6 +3219,7 @@ window.onAmostraNumeracaoSelect = function() {
         if (canvas) canvas.style.display = 'none';
         if (empty) empty.style.display = 'block';
         if (badge) badge.textContent = 'Sem Numeração';
+        renderAmostraCombinada();
         return;
     }
 
@@ -3229,6 +3235,7 @@ window.onAmostraNumeracaoSelect = function() {
             empty.style.display = 'block';
             empty.innerHTML = `<p style="font-size:0.85rem; color:var(--red);">Formato base desta numeração foi excluído.</p>`;
         }
+        renderAmostraCombinada();
         return;
     }
 
@@ -3327,6 +3334,8 @@ window.onAmostraNumeracaoSelect = function() {
             ctx.restore();
         });
     }
+
+    renderAmostraCombinada();
 };
 
 window.clearAmostraArteFile = function() {
@@ -3345,6 +3354,7 @@ window.clearAmostraArteFile = function() {
         empty.style.display = 'block';
         empty.innerHTML = `<div style="font-size: 2.5rem; margin-bottom: 12px; opacity: 0.7;">🖼️</div><p style="font-size: 0.85rem; font-weight: 500;">Carregue uma arte em PDF ou imagem para visualizar.</p>`;
     }
+    renderAmostraCombinada();
 };
 
 async function loadAmostraArteFile(file) {
@@ -3393,8 +3403,8 @@ async function loadAmostraArteFile(file) {
             img.src = URL.createObjectURL(file);
             await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
             
-            // Ler DPI da imagem da amostra ou adotar 300 DPI
-            const dpi = await getDpi(file) || 300;
+            // Adotar 300 DPI se não conseguirmos ler
+            const dpi = 300;
             const originalW_mm = (img.width / dpi) * 25.4;
             const originalH_mm = (img.height / dpi) * 25.4;
             
@@ -3416,11 +3426,88 @@ async function loadAmostraArteFile(file) {
         document.getElementById('btn-remove-amostra-arte').style.display = 'inline-flex';
         document.getElementById('amostra-arte-file-name').textContent = '📎 ' + file.name;
         toast('Arte de amostra carregada!', 'success');
+        renderAmostraCombinada();
     } catch (e) {
         toast('Erro ao carregar arte: ' + e.message, 'error');
         clearAmostraArteFile();
     }
 }
+
+// Função para renderizar a Amostra Combinada (Cor + Arte + Numeração) com Multiply
+function renderAmostraCombinada() {
+    const canvasComb = document.getElementById('amostra-comb-canvas');
+    const emptyComb = document.getElementById('amostra-comb-empty');
+    if (!canvasComb) return;
+
+    const corCanvas = document.getElementById('amostra-cor-canvas');
+    const arteCanvas = document.getElementById('amostra-arte-canvas');
+    const numCanvas = document.getElementById('amostra-num-canvas');
+
+    const corId = document.getElementById('amostra-cor').value;
+    const numId = document.getElementById('amostra-numeracao').value;
+    const hasArte = document.getElementById('amostra-arte-file').files.length > 0;
+
+    // Se nenhuma camada estiver selecionada/carregada, esconde o canvas e mostra o estado vazio
+    if (!corId && !numId && !hasArte) {
+        canvasComb.style.display = 'none';
+        if (emptyComb) emptyComb.style.display = 'block';
+        return;
+    }
+
+    const fmt = getAmostraFormato();
+    if (!fmt) {
+        canvasComb.style.display = 'none';
+        if (emptyComb) emptyComb.style.display = 'block';
+        return;
+    }
+
+    if (emptyComb) emptyComb.style.display = 'none';
+    canvasComb.style.display = 'block';
+
+    const S = getAmostraScale(fmt, canvasComb);
+    canvasComb.width = Math.round(fmt.width_mm * S);
+    canvasComb.height = Math.round(fmt.height_mm * S);
+
+    const ctx = canvasComb.getContext('2d');
+    ctx.clearRect(0, 0, canvasComb.width, canvasComb.height);
+
+    // Resetar composite operation
+    ctx.globalCompositeOperation = 'source-over';
+
+    // 1. Desenhar a Camada 1: Cor (se estiver disponível)
+    if (corId && corCanvas && corCanvas.style.display !== 'none' && corCanvas.width > 0) {
+        ctx.drawImage(corCanvas, 0, 0, canvasComb.width, canvasComb.height);
+    } else {
+        // Se não tiver cor selecionada, desenha uma base branca para podermos visualizar as outras camadas
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvasComb.width, canvasComb.height);
+    }
+
+    // 2. Desenhar a Camada 2: Arte com efeito similar ao Photoshop Multiply
+    if (hasArte && arteCanvas && arteCanvas.style.display !== 'none' && arteCanvas.width > 0) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'multiply';
+        ctx.drawImage(arteCanvas, 0, 0, canvasComb.width, canvasComb.height);
+        ctx.restore();
+    }
+
+    // 3. Desenhar a Camada 3: Numeração com efeito similar ao Photoshop Multiply
+    if (numId && numCanvas && numCanvas.style.display !== 'none' && numCanvas.width > 0) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'multiply';
+        ctx.drawImage(numCanvas, 0, 0, canvasComb.width, canvasComb.height);
+        ctx.restore();
+    }
+
+    // Borda final da amostra
+    ctx.save();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(0, 0, canvasComb.width, canvasComb.height);
+    ctx.restore();
+}
+window.renderAmostraCombinada = renderAmostraCombinada;
 
 // Configuração de listeners para Amostras
 document.addEventListener('DOMContentLoaded', () => {
