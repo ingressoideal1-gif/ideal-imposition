@@ -124,8 +124,10 @@ class ImpositionConfig:
         self.rows = formato["rows"]
         self.gap_h = formato.get("gap_h_mm", 0) * MM2PT   # espaço horizontal entre cols
         self.gap_v = formato.get("gap_v_mm", 0) * MM2PT   # espaço vertical entre rows
-        self.offset_h = formato.get("offset_h_mm", 0) * MM2PT # deslocamento horizontal da arte
-        self.offset_v = formato.get("offset_v_mm", 0) * MM2PT # deslocamento vertical da arte
+        # Deslocamentos e rotações
+        self.offset_h = formato.get("offset_h_mm", 0) * MM2PT
+        self.offset_v = formato.get("offset_v_mm", 0) * MM2PT
+        self.rotations = formato.get("rotations", {})  # Dicionário de rotações de células (ex: {"0": 90})
 
         # Folha de saída
         self.sheet_w = saida["width_mm"] * MM2PT
@@ -231,7 +233,7 @@ class ImpositionEngine:
                     fontname=font_name,
                     color=rgb,
                     morph=(pivot, fitz.Matrix(math.cos(math.radians(angle)), -math.sin(math.radians(angle)),
-                                              math.sin(math.radians(angle)),  math.cos(math.radians(angle))))
+                                              math.sin(math.radians(angle)),  math.cos(math.radians(angle)), 0, 0))
                 )
             else:
                 page.insert_text(
@@ -331,6 +333,9 @@ class ImpositionEngine:
                     cell_x1 = cell_x0 + cfg.item_w
                     cell_y1 = cell_y0 + cfg.item_h
 
+                    # Obter rotação da célula (converte índice para string para compatibilidade com chaves de dicionário JSON)
+                    cell_rotation = int(cfg.rotations.get(str(P), 0))
+
                     # Arte em 100% escala original, centralizada na célula + offset
                     # Centralizar: deslocar pelo delta entre tamanho do item e tamanho original da arte
                     center_x = cell_x0 + (cfg.item_w - base_w) / 2
@@ -343,13 +348,62 @@ class ImpositionEngine:
                     art_y1 = art_y0 + base_h
 
                     rect_art = fitz.Rect(art_x0, art_y0, art_x1, art_y1)
-                    out_page.show_pdf_page(rect_art, doc_base, 0)
+                    
+                    if cell_rotation != 0:
+                        # Para rotacionar a arte base mantendo ela centralizada na célula:
+                        # passamos show_pdf_page com keep_proportion=True e rotate=cell_rotation
+                        # Calculamos o rect da célula em si para que show_pdf_page a posicione corretamente dentro dela rotacionada
+                        rect_cell = fitz.Rect(cell_x0, cell_y0, cell_x1, cell_y1)
+                        # Porém, o offset da arte também deve sofrer a rotação. 
+                        # Para simplificar e garantir a fidelidade, faremos show_pdf_page diretamente no rect da arte rotacionada
+                        # Rotacionamos a arte sobre seu próprio centro
+                        out_page.show_pdf_page(rect_art, doc_base, 0, keep_proportion=True, rotate=cell_rotation)
+                    else:
+                        out_page.show_pdf_page(rect_art, doc_base, 0)
 
                     # Renderizar elementos VDP
                     val = cfg.seq_start + (item_index * cfg.seq_increment)
                     csv_row = cfg.csv_data[item_index] if cfg.csv_data else None
                     for el in cfg.elements:
-                        self._render_element(out_page, el, cell_x0, cell_y0, val, csv_row)
+                        if cell_rotation != 0:
+                            # Se a célula tem rotação, precisamos rotacionar o ponto do elemento VDP em relação ao centro da célula!
+                            # Centro da célula:
+                            cx = cell_x0 + cfg.item_w / 2
+                            cy = cell_y0 + cfg.item_h / 2
+                            
+                            # Coordenadas do elemento sem rotação
+                            orig_el_x = cell_x0 + el["_x"]
+                            orig_el_y = cell_y0 + el["_y"]
+                            
+                            # Vetor do centro até o elemento
+                            dx = orig_el_x - cx
+                            dy = orig_el_y - cy
+                            
+                            rad = math.radians(cell_rotation)
+                            cos_a = math.cos(rad)
+                            sin_a = math.sin(rad)
+                            
+                            # Rotacionar o vetor de deslocamento
+                            rx = dx * cos_a - dy * sin_a
+                            ry = dx * sin_a + dy * cos_a
+                            
+                            # Novas coordenadas absolutas
+                            rot_el_x = cx + rx
+                            rot_el_y = cy + ry
+                            
+                            # Rotacionar também a rotação intrínseca do elemento
+                            rotated_el = dict(el)
+                            rotated_el["rotation"] = (el.get("rotation", 0) + cell_rotation) % 360
+                            
+                            # Para compensar o ponto de inserção do elemento que rotacionou em torno do seu próprio centro ou origem:
+                            # Passamos a nova coordenada e renderizamos
+                            # Ajustamos as coordenadas relativas temporárias
+                            rotated_el["_x"] = rot_el_x - cell_x0
+                            rotated_el["_y"] = rot_el_y - cell_y0
+                            
+                            self._render_element(out_page, rotated_el, cell_x0, cell_y0, val, csv_row)
+                        else:
+                            self._render_element(out_page, el, cell_x0, cell_y0, val, csv_row)
 
         doc_out.save(cfg.out_pdf, garbage=3, deflate=True)
         doc_base.close()
