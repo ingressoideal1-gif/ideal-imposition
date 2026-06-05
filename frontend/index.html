@@ -95,6 +95,11 @@
                 Imposição
             </button>
 
+            <button class="nav-btn" data-view="view-amostras" id="nav-amostras">
+                <span class="nav-icon">🧪</span>
+                Amostras
+            </button>
+
             <span class="nav-group-label admin-only" style="margin-top:8px; display:none;">Administração</span>
 
             <button class="nav-btn admin-only" data-view="view-admin" id="nav-admin" style="display:none;">
@@ -721,6 +726,97 @@
                             </div>
                             <div class="preview-canvas-container">
                                 <canvas id="preview-canvas"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ══════════════════════════════════════════════════════════════ -->
+            <!-- VIEW: AMOSTRAS                                                 -->
+            <!-- ══════════════════════════════════════════════════════════════ -->
+            <section id="view-amostras" class="view-section">
+                <div class="page-header">
+                    <div class="page-header-text">
+                        <h1>🧪 Amostras</h1>
+                        <p>Selecione uma cor e uma numeração cadastradas, carregue uma arte e veja a visualização em tempo real de cada camada.</p>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-bottom: 24px;">
+                    <div class="card-header">
+                        <span class="card-title"><span class="icon">⚙️</span> Seleção de Camadas</span>
+                    </div>
+                    <div class="form-grid" style="grid-template-columns: 1fr 1fr 1.5fr;">
+                        <div class="form-group">
+                            <label>Cor Cadastrada</label>
+                            <select class="form-control" id="amostra-cor" onchange="onAmostraCorSelect()">
+                                <option value="">— Selecione uma Cor —</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Numeração Cadastrada</label>
+                            <select class="form-control" id="amostra-numeracao" onchange="onAmostraNumeracaoSelect()">
+                                <option value="">— Selecione uma Numeração —</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Arte de Amostra (PDF, JPG, PNG)</label>
+                            <div style="display:flex; gap:10px; align-items: center; flex-wrap: wrap; margin-top: 4px;">
+                                <label class="btn btn-sm btn-secondary" for="amostra-arte-file" style="margin: 0; cursor: pointer;">
+                                    🖼️ Upload Arte
+                                </label>
+                                <input type="file" id="amostra-arte-file" accept=".pdf,.jpg,.jpeg,.png" style="display:none">
+                                <button class="btn btn-sm btn-ghost btn-danger" id="btn-remove-amostra-arte" style="display:none; padding: 4px 8px;" onclick="clearAmostraArteFile()">✕ Remover</button>
+                                <span id="amostra-arte-file-name" style="font-size:0.82rem; color:var(--text-dim)"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Janelas de Visualização Uma Abaixo da Outra -->
+                <div style="display: flex; flex-direction: column; gap: 24px;">
+                    <!-- 1. Visualização da Cor -->
+                    <div class="card" style="margin-bottom: 0;">
+                        <div class="card-header">
+                            <span class="card-title">🎨 Camada 1: Visualização da Cor</span>
+                            <span class="badge badge-blue" id="amostra-cor-badge">Sem Cor</span>
+                        </div>
+                        <div style="display: flex; justify-content: center; align-items: center; min-height: 250px; background: var(--bg-body); border-radius: var(--radius); padding: 15px; overflow: auto; border: 1px solid var(--border);">
+                            <canvas id="amostra-cor-canvas" style="max-width: 100%; height: auto; display: none; box-shadow: var(--shadow); border: 1px solid var(--border); background: #ffffff;"></canvas>
+                            <div id="amostra-cor-empty" style="text-align: center; color: var(--text-dim); padding: 20px;">
+                                <div style="font-size: 2.5rem; margin-bottom: 12px; opacity: 0.7;">🎨</div>
+                                <p style="font-size: 0.85rem; font-weight: 500;">Selecione uma cor para visualizar.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 2. Visualização da Numeração (VDP) -->
+                    <div class="card" style="margin-bottom: 0;">
+                        <div class="card-header">
+                            <span class="card-title">🔢 Camada 2: Visualização da Numeração (VDP)</span>
+                            <span class="badge badge-purple" id="amostra-num-badge">Sem Numeração</span>
+                        </div>
+                        <div style="display: flex; justify-content: center; align-items: center; min-height: 250px; background: var(--bg-body); border-radius: var(--radius); padding: 15px; overflow: auto; border: 1px solid var(--border);">
+                            <canvas id="amostra-num-canvas" style="max-width: 100%; height: auto; display: none; box-shadow: var(--shadow); border: 1px solid var(--border); background: #ffffff;"></canvas>
+                            <div id="amostra-num-empty" style="text-align: center; color: var(--text-dim); padding: 20px;">
+                                <div style="font-size: 2.5rem; margin-bottom: 12px; opacity: 0.7;">🔢</div>
+                                <p style="font-size: 0.85rem; font-weight: 500;">Selecione uma numeração para visualizar.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 3. Visualização da Arte de Amostra -->
+                    <div class="card" style="margin-bottom: 0;">
+                        <div class="card-header">
+                            <span class="card-title">🖼️ Camada 3: Visualização da Arte Carregada</span>
+                            <span class="badge badge-teal" id="amostra-arte-badge">Sem Arte</span>
+                        </div>
+                        <div style="display: flex; justify-content: center; align-items: center; min-height: 250px; background: var(--bg-body); border-radius: var(--radius); padding: 15px; overflow: auto; border: 1px solid var(--border);">
+                            <canvas id="amostra-arte-canvas" style="max-width: 100%; height: auto; display: none; box-shadow: var(--shadow); border: 1px solid var(--border); background: #ffffff;"></canvas>
+                            <div id="amostra-arte-empty" style="text-align: center; color: var(--text-dim); padding: 20px;">
+                                <div style="font-size: 2.5rem; margin-bottom: 12px; opacity: 0.7;">🖼️</div>
+                                <p style="font-size: 0.85rem; font-weight: 500;">Carregue uma arte em PDF ou imagem para visualizar.</p>
                             </div>
                         </div>
                     </div>

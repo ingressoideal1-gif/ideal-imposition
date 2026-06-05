@@ -724,6 +724,23 @@ function populateSelects() {
         }
         if (cur) sel.value = cur;
     });
+
+    // Amostras
+    const selAmCor = document.getElementById('amostra-cor');
+    if (selAmCor) {
+        const cur = selAmCor.value;
+        selAmCor.innerHTML = '<option value="">— Selecione uma Cor —</option>' +
+            state.cores.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+        if (cur) selAmCor.value = cur;
+    }
+
+    const selAmNum = document.getElementById('amostra-numeracao');
+    if (selAmNum) {
+        const cur = selAmNum.value;
+        selAmNum.innerHTML = '<option value="">— Selecione uma Numeração —</option>' +
+            state.numeracoes.map(n => `<option value="${n.id}">${n.name}</option>`).join('');
+        if (cur) selAmNum.value = cur;
+    }
 }
 
 // ─── NUMERAÇÃO EDITOR ─────────────────────────────────────────────────────────
@@ -3075,4 +3092,298 @@ window.changeUserRole = async function(uid, newRole) {
 document.getElementById('nav-admin')?.addEventListener('click', () => {
     loadAdminUsers();
 });
+
+// ─── LÓGICA DA TELA DE AMOSTRAS ──────────────────────────────────────────────
+let amostraArteImage = null;
+let amostraArteWidth = 0;
+let amostraArteHeight = 0;
+
+window.onAmostraCorSelect = async function() {
+    const corId = document.getElementById('amostra-cor').value;
+    const canvas = document.getElementById('amostra-cor-canvas');
+    const empty = document.getElementById('amostra-cor-empty');
+    const badge = document.getElementById('amostra-cor-badge');
+    
+    if (!corId) {
+        if (canvas) canvas.style.display = 'none';
+        if (empty) {
+            empty.style.display = 'block';
+            empty.innerHTML = `<div style="font-size: 2.5rem; margin-bottom: 12px; opacity: 0.7;">🎨</div><p style="font-size: 0.85rem; font-weight: 500;">Selecione uma cor para visualizar.</p>`;
+        }
+        if (badge) badge.textContent = 'Sem Cor';
+        return;
+    }
+
+    const cor = state.cores.find(c => c.id === corId);
+    if (!cor) return;
+
+    if (badge) badge.textContent = cor.name;
+
+    if (cor.pdf_base64) {
+        if (empty) {
+            empty.style.display = 'block';
+            empty.innerHTML = '<div class="spinner"></div><p style="margin-top:10px; font-size:0.82rem; font-weight:500;">Carregando PDF da Cor...</p>';
+        }
+        try {
+            const base64Data = cor.pdf_base64.includes('base64,') ? cor.pdf_base64.split('base64,')[1] : cor.pdf_base64;
+            const binStr = atob(base64Data);
+            const bytes = new Uint8Array(binStr.length);
+            for (let i = 0; i < binStr.length; i++) {
+                bytes[i] = binStr.charCodeAt(i);
+            }
+
+            const loadingTask = pdfjsLib.getDocument({ data: bytes });
+            const pdf = await loadingTask.promise;
+            const page = await pdf.getPage(1);
+            
+            const viewport = page.getViewport({ scale: 1.0 });
+            const containerW = canvas.parentElement.clientWidth - 30;
+            const scale = containerW / viewport.width;
+            const scaledViewport = page.getViewport({ scale: Math.min(scale, 1.5) });
+            
+            const context = canvas.getContext('2d');
+            canvas.width = scaledViewport.width;
+            canvas.height = scaledViewport.height;
+            
+            await page.render({ canvasContext: context, viewport: scaledViewport }).promise;
+            
+            if (empty) empty.style.display = 'none';
+            canvas.style.display = 'block';
+        } catch (e) {
+            console.error("Erro ao renderizar cor na amostra:", e);
+            if (empty) {
+                empty.style.display = 'block';
+                empty.innerHTML = '<div style="font-size: 2rem; color: var(--red); margin-bottom:10px;">✕</div><p style="font-size:0.85rem; font-weight:500;">Erro ao carregar PDF de referência da cor.</p>';
+            }
+            canvas.style.display = 'none';
+        }
+    } else {
+        if (canvas) canvas.style.display = 'none';
+        if (empty) {
+            empty.style.display = 'block';
+            empty.innerHTML = `<div style="font-size: 2.5rem; margin-bottom: 12px; opacity: 0.7;">🎨</div><p style="font-size: 0.85rem; font-weight: 500;">Esta cor não possui PDF de referência cadastrado.</p>`;
+        }
+    }
+};
+
+window.onAmostraNumeracaoSelect = function() {
+    const numId = document.getElementById('amostra-numeracao').value;
+    const canvas = document.getElementById('amostra-num-canvas');
+    const empty = document.getElementById('amostra-num-empty');
+    const badge = document.getElementById('amostra-num-badge');
+
+    if (!numId) {
+        if (canvas) canvas.style.display = 'none';
+        if (empty) empty.style.display = 'block';
+        if (badge) badge.textContent = 'Sem Numeração';
+        return;
+    }
+
+    const num = state.numeracoes.find(n => n.id === numId);
+    if (!num) return;
+
+    if (badge) badge.textContent = num.name;
+
+    const fmt = state.formatos.find(f => f.id === num.formato_id);
+    if (!fmt) {
+        if (canvas) canvas.style.display = 'none';
+        if (empty) {
+            empty.style.display = 'block';
+            empty.innerHTML = `<p style="font-size:0.85rem; color:var(--red);">Formato base desta numeração foi excluído.</p>`;
+        }
+        return;
+    }
+
+    // Desenhar a numeração fictícia no Canvas de Amostras
+    if (empty) empty.style.display = 'none';
+    canvas.style.display = 'block';
+
+    const S = 3.5; // Escala fixa para visualização confortável
+    canvas.width = Math.round(fmt.width_mm * S);
+    canvas.height = Math.round(fmt.height_mm * S);
+    const ctx = canvas.getContext('2d');
+
+    // Fundo branco limpo
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Contorno do formato
+    ctx.strokeStyle = '#64748b';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0, 0, canvas.width, canvas.height);
+
+    // Desenhar elementos cadastrados
+    const MM2PT = 2.8346;
+    if (num.elements) {
+        num.elements.forEach(el => {
+            const x = el.x_mm * S;
+            const y = el.y_mm * S;
+            const color = el.color || '#000000';
+            const rot = (el.rotation || 0) * Math.PI / 180;
+
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(rot);
+
+            if (el.type === 'TEXT' || el.type === 'FIXED') {
+                const fs = (el.font_size || 12) * S / 2.8346;
+                let fontStyle = 'Inter, sans-serif';
+                if (el.font_name === 'helv-bold') fontStyle = 'bold Inter, sans-serif';
+                else if (el.font_name === 'times') fontStyle = 'Times New Roman, serif';
+                else if (el.font_name === 'times-bold') fontStyle = 'bold Times New Roman, serif';
+                else if (el.font_name === 'cour') fontStyle = 'Courier New, monospace';
+                else if (el.font_name === 'cour-bold') fontStyle = 'bold Courier New, monospace';
+
+                ctx.font = `${fs}px ${fontStyle}`;
+                ctx.fillStyle = color;
+                
+                let label = '';
+                if (el.type === 'FIXED') {
+                    label = el.fixed_value || 'TEXTO';
+                } else {
+                    const padVal = typeof el.pad !== 'undefined' ? el.pad : 6;
+                    label = `${el.prefix || ''}${String(1).padStart(padVal, '0')}${el.suffix || ''}`;
+                }
+                ctx.fillText(label, 0, fs);
+            } else if (el.type === 'QR') {
+                const sz = (el.size_mm || 15) * S;
+                ctx.fillStyle = color;
+                ctx.fillRect(0, 0, sz, sz);
+                ctx.fillStyle = '#ffffff';
+                const cell = sz / 7;
+                for (const [cx, cy] of [[0, 0], [4, 0], [0, 4]]) {
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(cx * cell, cy * cell, 3 * cell, 3 * cell);
+                    ctx.fillStyle = color;
+                    ctx.fillRect(cx * cell + cell * 0.5, cy * cell + cell * 0.5, 2 * cell, 2 * cell);
+                }
+            } else if (el.type === 'BARCODE') {
+                const bw = (el.width_mm || 40) * S;
+                const bh = (el.height_mm || 10) * S;
+                ctx.fillStyle = color;
+                const barW = bw / 40;
+                const pattern = [1, 0, 1, 1, 0, 1, 0, 1, 1, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 0, 1, 0, 1, 1];
+                for (let i = 0; i < pattern.length; i++) {
+                    if (pattern[i]) ctx.fillRect(i * barW, 0, barW * 0.7, bh);
+                }
+            } else if (el.type === 'PICOTE') {
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 2.0;
+                ctx.setLineDash([6, 3]);
+                ctx.beginPath();
+                ctx.moveTo(0, -y);
+                ctx.lineTo(0, canvas.height - y);
+                ctx.stroke();
+            } else if (el.type === 'SVG') {
+                const sz_w = (el.width_mm || 20) * S;
+                const sz_h = (el.height_mm || 20) * S;
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 1;
+                ctx.strokeRect(0, 0, sz_w, sz_h);
+                ctx.font = `${Math.max(6, sz_h * 0.15)}px Inter, sans-serif`;
+                ctx.fillStyle = color;
+                ctx.textAlign = 'center';
+                ctx.fillText('SVG', sz_w / 2, sz_h / 2 + (sz_h * 0.05));
+            }
+            ctx.restore();
+        });
+    }
+};
+
+window.clearAmostraArteFile = function() {
+    amostraArteImage = null;
+    amostraArteWidth = 0;
+    amostraArteHeight = 0;
+    document.getElementById('amostra-arte-file').value = '';
+    document.getElementById('amostra-arte-file-name').textContent = '';
+    document.getElementById('btn-remove-amostra-arte').style.display = 'none';
+    document.getElementById('amostra-arte-badge').textContent = 'Sem Arte';
+    
+    const canvas = document.getElementById('amostra-arte-canvas');
+    const empty = document.getElementById('amostra-arte-empty');
+    if (canvas) canvas.style.display = 'none';
+    if (empty) {
+        empty.style.display = 'block';
+        empty.innerHTML = `<div style="font-size: 2.5rem; margin-bottom: 12px; opacity: 0.7;">🖼️</div><p style="font-size: 0.85rem; font-weight: 500;">Carregue uma arte em PDF ou imagem para visualizar.</p>`;
+    }
+};
+
+async function loadAmostraArteFile(file) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    const canvas = document.getElementById('amostra-arte-canvas');
+    const empty = document.getElementById('amostra-arte-empty');
+    const badge = document.getElementById('amostra-arte-badge');
+
+    if (badge) badge.textContent = file.name;
+    if (empty) {
+        empty.style.display = 'block';
+        empty.innerHTML = '<div class="spinner"></div><p style="margin-top:10px; font-size:0.82rem; font-weight:500;">Processando Arte...</p>';
+    }
+
+    try {
+        if (ext === 'pdf') {
+            if (typeof pdfjsLib === 'undefined') {
+                return toast('PDF.js não disponível. Use JPG/PNG.', 'error');
+            }
+            pdfjsLib.GlobalWorkerOptions.workerSrc =
+                'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            const page = await pdf.getPage(1);
+            
+            const vp = page.getViewport({ scale: 1.0 });
+            const containerW = canvas.parentElement.clientWidth - 30;
+            const scale = containerW / vp.width;
+            const scaledViewport = page.getViewport({ scale: Math.min(scale, 1.5) });
+            
+            const context = canvas.getContext('2d');
+            canvas.width = scaledViewport.width;
+            canvas.height = scaledViewport.height;
+            
+            await page.render({ canvasContext: context, viewport: scaledViewport }).promise;
+        } else {
+            const img = new Image();
+            img.src = URL.createObjectURL(file);
+            await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+            
+            const containerW = canvas.parentElement.clientWidth - 30;
+            const scale = Math.min(containerW / img.width, 1.5);
+            
+            canvas.width = img.width * scale;
+            canvas.height = img.height * scale;
+            const context = canvas.getContext('2d');
+            context.drawImage(img, 0, 0, canvas.width, canvas.height);
+        }
+
+        if (empty) empty.style.display = 'none';
+        if (canvas) canvas.style.display = 'block';
+        
+        document.getElementById('btn-remove-amostra-arte').style.display = 'inline-flex';
+        document.getElementById('amostra-arte-file-name').textContent = '📎 ' + file.name;
+        toast('Arte de amostra carregada!', 'success');
+    } catch (e) {
+        toast('Erro ao carregar arte: ' + e.message, 'error');
+        clearAmostraArteFile();
+    }
+}
+
+// Configuração de listeners para Amostras
+document.addEventListener('DOMContentLoaded', () => {
+    const amArteInp = document.getElementById('amostra-arte-file');
+    if (amArteInp) {
+        amArteInp.addEventListener('change', e => {
+            if (e.target.files[0]) loadAmostraArteFile(e.target.files[0]);
+        });
+    }
+});
+
+(function () {
+    const amArteInp = document.getElementById('amostra-arte-file');
+    if (amArteInp && !amArteInp._listenerSet) {
+        amArteInp.addEventListener('change', e => {
+            if (e.target.files[0]) loadAmostraArteFile(e.target.files[0]);
+        });
+        amArteInp._listenerSet = true;
+    }
+})();
 
