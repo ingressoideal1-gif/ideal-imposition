@@ -55,8 +55,25 @@ O sistema processa dinamicamente a sobreposição de dados em layouts de imposi�
 
 ### 2. Esquemas de Distribuição e Imposição
 
-*   **Sequencial (Standard):** Distribui a sequência linha por linha, coluna por coluna na folha.
-*   **Corte e Empilhamento (Cut & Stack):** Distribui as sequências de modo que, ao cortar as pilhas impressas, a sequência numérica esteja perfeitamente ordenada de forma vertical de baixo para cima ao empilhar as sub-folhas.
+*   **Sequencial (Standard):** Distribui a sequência linha por linha, coluna por coluna na folha de saída.
+*   **Corte e Empilhamento (Cut & Stack):** Distribui as sequências de modo que, ao cortar as pilhas impressas e colocá-las umas sobre as outras, a sequência numérica esteja perfeitamente ordenada verticalmente.
+*   **Step & Repeat:** Clona o mesmo item (mesmo número/registro) por todas as posições da folha de saída.
+*   **Pdf Múltiplo (Paginação Especial):** Ao carregar um arquivo PDF de múltiplas páginas para imposição, o sistema bloqueia e preenche o número inicial e final de acordo com as páginas do PDF e distribui cada página individualmente nas posições da grade da folha.
+
+### 3. Modo de Impressão (Frente e Verso / Duplex)
+
+O sistema suporta imposição frente e verso automática. Ao selecionar **Frente e Verso (Duplex)**:
+*   Cada folha lógica gera duas páginas de saída: uma **Frente** (página ímpar do PDF final) e um **Verso** (página par do PDF final).
+*   No verso, as colunas físicas são espelhadas horizontalmente (`col_fisico = cols - 1 - col`) e os elementos VDP/Picotes são filtrados dinamicamente para renderizar apenas nas faces configuradas ("frente", "verso" ou "ambas").
+*   A rotação das células no verso é automaticamente invertida (`(360 - cell_rotation_frente) % 360`) para manter o alinhamento de cabeça com cabeça após o tombamento físico do papel.
+
+### 4. Rotação Individual de Células na Grade
+
+O painel permite aplicar rotações específicas ($0^\circ$, $90^\circ$, $180^\circ$, $270^\circ$) para cada célula da grade de imposição de forma independente. O motor do backend rotaciona o PDF de entrada e os elementos VDP correspondentes em torno do centro geométrico de cada célula física correspondente.
+
+### 5. Centralização Absoluta e Correção de CropBox
+
+Toda arte carregada (PDF, JPG, PNG) é centralizada de forma absoluta na sua área de aplicação. Para PDFs gerados por softwares que trazem origem deslocada ($x_0 \neq 0$ ou $y_0 \neq 0$), a imposição física faz uso de recorte explícito (`clip=page_base.rect`) no PyMuPDF para centralizar e alinhar perfeitamente o CropBox com as margens físicas do papel e marcas de corte. Veja a documentação técnica específica em [regra_centralizacao.md](file:///c:/Antigravity%20Projetos/imposicao/docs/regra_centralizacao.md).
 
 ---
 
