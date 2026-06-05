@@ -974,14 +974,15 @@ function drawCanvas() {
         let originalH_mm = 0;
 
         if (state.bgImage.originalPdfWidthPt) {
-            // Se for PDF, usar os pontos originais dividindo por MM2PT (72 / 25.4)
+            // Se for PDF, usar os pontos originais dividindo por MM2PT (72 / 25.4 = 2.8346)
             originalW_mm = state.bgImage.originalPdfWidthPt / MM2PT;
             originalH_mm = state.bgImage.originalPdfHeightPt / MM2PT;
         } else {
-            // Imagem padrão: assumir 72 DPI (caso padrão web ou sem info)
-            // pixels / 72 * 25.4 mm (72 DPI = 2.8346 px por mm)
-            originalW_mm = state.bgImage.width / MM2PT;
-            originalH_mm = state.bgImage.height / MM2PT;
+            // Se for imagem (JPG/PNG), obter o DPI lido ou adotar 300 DPI como fallback de alta resolução
+            const dpi = state.bgImage.dpiValue || 300;
+            // pixels / dpi * 25.4 (conversão para mm)
+            originalW_mm = (state.bgImage.width / dpi) * 25.4;
+            originalH_mm = (state.bgImage.height / dpi) * 25.4;
         }
 
         const drawW = originalW_mm * S;
@@ -1500,6 +1501,9 @@ async function loadBgImage(file) {
             img.originalPdfHeightPt = vpOrig.height;
         } else {
             img.src = URL.createObjectURL(file);
+            // Obter o DPI da imagem a partir dos metadados e salvar na img
+            const dpi = await getDpi(file);
+            img.dpiValue = dpi;
         }
         await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
         state.bgImage = img;
