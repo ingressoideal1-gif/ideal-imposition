@@ -405,6 +405,71 @@ window.setPreset = (w, h) => {
 let corPdfBase64 = "";
 let corPdfFilename = "";
 
+// Função para renderizar a primeira página do PDF de referência no Canvas
+async function renderPdfPreview(pdfBase64) {
+    const canvas = document.getElementById('cor-pdf-preview-canvas');
+    const emptyEl = document.getElementById('cor-pdf-preview-empty');
+    if (!canvas) return;
+
+    if (!pdfBase64) {
+        canvas.style.display = 'none';
+        if (emptyEl) {
+            emptyEl.style.display = 'block';
+            emptyEl.innerHTML = `
+                <div style="font-size: 3rem; margin-bottom: 12px; opacity: 0.7;">📄</div>
+                <p style="font-size: 0.9rem; font-weight: 500;">Selecione uma cor para editar ou faça upload de um PDF para visualizar.</p>
+            `;
+        }
+        return;
+    }
+
+    try {
+        if (emptyEl) {
+            emptyEl.style.display = 'block';
+            emptyEl.innerHTML = '<div class="spinner"></div><p style="margin-top:10px; font-size:0.88rem; font-weight:500;">Carregando PDF...</p>';
+        }
+        
+        const base64Data = pdfBase64.includes('base64,') ? pdfBase64.split('base64,')[1] : pdfBase64;
+        const binStr = atob(base64Data);
+        const len = binStr.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            bytes[i] = binStr.charCodeAt(i);
+        }
+
+        const loadingTask = pdfjsLib.getDocument({ data: bytes });
+        const pdf = await loadingTask.promise;
+        const page = await pdf.getPage(1);
+        
+        // Renderizar com escala adequada baseada no container
+        const viewport = page.getViewport({ scale: 1.0 });
+        const containerW = canvas.parentElement.clientWidth - 30; // compensar paddings
+        const scale = containerW / viewport.width;
+        const scaledViewport = page.getViewport({ scale: Math.min(scale, 1.5) });
+        
+        const context = canvas.getContext('2d');
+        canvas.width = scaledViewport.width;
+        canvas.height = scaledViewport.height;
+        
+        const renderContext = {
+            canvasContext: context,
+            viewport: scaledViewport
+        };
+        await page.render(renderContext).promise;
+        
+        if (emptyEl) emptyEl.style.display = 'none';
+        canvas.style.display = 'block';
+    } catch (e) {
+        console.error("Erro ao renderizar preview do PDF:", e);
+        if (emptyEl) {
+            emptyEl.style.display = 'block';
+            emptyEl.innerHTML = '<div style="font-size: 2rem; color: var(--red); margin-bottom:10px;">✕</div><p style="font-size:0.88rem; font-weight:500;">Falha ao carregar visualização do PDF.</p>';
+        }
+        canvas.style.display = 'none';
+    }
+}
+window.renderPdfPreview = renderPdfPreview;
+
 // Event Listener para ler o arquivo PDF em Base64
 document.getElementById('cor-pdf-file')?.addEventListener('change', function(e) {
     const file = e.target.files[0];
@@ -420,6 +485,7 @@ document.getElementById('cor-pdf-file')?.addEventListener('change', function(e) 
         corPdfFilename = file.name;
         document.getElementById('cor-pdf-file-name').textContent = "📎 " + file.name;
         document.getElementById('btn-remove-cor-pdf').style.display = 'inline-flex';
+        renderPdfPreview(corPdfBase64); // Exibir preview do PDF recém-carregado
     };
     reader.readAsDataURL(file);
 });
@@ -433,6 +499,7 @@ function clearCorPdfFile() {
     if (labelEl) labelEl.textContent = "";
     const btnRemove = document.getElementById('btn-remove-cor-pdf');
     if (btnRemove) btnRemove.style.display = 'none';
+    renderPdfPreview(null); // Limpar visualização
 }
 window.clearCorPdfFile = clearCorPdfFile;
 
@@ -461,16 +528,16 @@ function renderCores() {
         const fmt = state.formatos.find(f => f.id === c.formato_id);
         const fmtName = fmt ? fmt.name : 'Formato Excluído';
         const pdfLink = c.pdf_base64 
-            ? `<a href="${c.pdf_base64}" download="${c.pdf_filename || 'referencia.pdf'}" class="badge badge-teal" style="text-decoration:none;">📥 Baixar PDF</a>`
+            ? `<a href="${c.pdf_base64}" download="${c.pdf_filename || 'referencia.pdf'}" class="badge badge-teal" style="text-decoration:none;" onclick="event.stopPropagation();">📥 Baixar PDF</a>`
             : '<span style="color:var(--text-faint)">Sem arquivo</span>';
             
         return `
-        <tr>
+        <tr style="cursor: pointer;" onclick="renderPdfPreview('${c.pdf_base64 || ''}')" title="Clique para visualizar o PDF">
             <td><strong>${c.name}</strong></td>
             <td>${fmtName}</td>
             <td>${c.width_mm} × ${c.height_mm} mm</td>
             <td>${pdfLink}</td>
-            <td class="actions-cell">
+            <td class="actions-cell" onclick="event.stopPropagation();">
                 <button class="btn btn-sm btn-ghost" onclick="editCor('${c.id}')">✏️ Editar</button>
                 <button class="btn btn-danger btn-sm" onclick="deleteCor('${c.id}')">🗑️</button>
             </td>
@@ -529,6 +596,7 @@ function editCor(id) {
         corPdfFilename = c.pdf_filename || "referencia.pdf";
         document.getElementById('cor-pdf-file-name').textContent = "📎 " + corPdfFilename;
         document.getElementById('btn-remove-cor-pdf').style.display = 'inline-flex';
+        renderPdfPreview(c.pdf_base64); // Exibir preview do PDF ao editar
     } else {
         clearCorPdfFile();
     }
@@ -548,6 +616,7 @@ function cancelCorEdit() {
     clearCorPdfFile();
     document.getElementById('cor-form-title').textContent = 'Nova Cor';
     document.getElementById('btn-cor-cancel').style.display = 'none';
+    renderPdfPreview(null); // Resetar preview do PDF
 }
 window.cancelCorEdit = cancelCorEdit;
 

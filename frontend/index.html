@@ -543,26 +543,43 @@
                     </div>
                 </div>
 
-                <!-- Tabela de Cores Cadastradas -->
-                <div class="card">
-                    <div class="card-header">
-                        <span class="card-title"><span class="icon">📋</span> Cores Cadastradas</span>
+                <!-- Grid Layout: Tabela de Cores + Visualizador PDF -->
+                <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 20px; align-items: start; margin-top: 20px;">
+                    <!-- Tabela de Cores Cadastradas -->
+                    <div class="card" style="margin-bottom: 0;">
+                        <div class="card-header">
+                            <span class="card-title"><span class="icon">📋</span> Cores Cadastradas</span>
+                        </div>
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Nome da Cor</th>
+                                    <th>Formato Base</th>
+                                    <th>Tamanho</th>
+                                    <th>Arquivo PDF</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-cores"></tbody>
+                        </table>
+                        <div class="empty-state" id="empty-cores" style="display:none">
+                            <div class="empty-state-icon">🎨</div>
+                            <p>Nenhuma cor cadastrada ainda.</p>
+                        </div>
                     </div>
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Nome da Cor</th>
-                                <th>Formato Base</th>
-                                <th>Tamanho</th>
-                                <th>Arquivo PDF</th>
-                                <th>Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tbody-cores"></tbody>
-                    </table>
-                    <div class="empty-state" id="empty-cores" style="display:none">
-                        <div class="empty-state-icon">🎨</div>
-                        <p>Nenhuma cor cadastrada ainda.</p>
+
+                    <!-- Janela de Visualização do PDF de Referência -->
+                    <div class="card" style="margin-bottom: 0;">
+                        <div class="card-header">
+                            <span class="card-title">👁️ Visualização do PDF de Referência</span>
+                        </div>
+                        <div style="display: flex; justify-content: center; align-items: center; min-height: 350px; background: var(--bg-body); border-radius: var(--radius); padding: 15px; overflow: auto; border: 1px solid var(--border);">
+                            <canvas id="cor-pdf-preview-canvas" style="max-width: 100%; height: auto; display: none; box-shadow: var(--shadow); border: 1px solid var(--border); background: #ffffff;"></canvas>
+                            <div id="cor-pdf-preview-empty" style="text-align: center; color: var(--text-dim); padding: 20px;">
+                                <div style="font-size: 3rem; margin-bottom: 12px; opacity: 0.7;">📄</div>
+                                <p style="font-size: 0.9rem; font-weight: 500;">Selecione uma cor para editar ou faça upload de um PDF para visualizar.</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>
