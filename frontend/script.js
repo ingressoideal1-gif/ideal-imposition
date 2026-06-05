@@ -3509,69 +3509,87 @@ function renderAmostraCombinada() {
 
     // 2. Desenhar a Camada 2: Arte com efeito similar ao Photoshop Multiply (lendo a dimensão e centralizando em um canvas intermediário do tamanho da Cor)
     if (hasArte && arteCanvas && arteCanvas.style.display !== 'none' && arteCanvas.width > 0) {
+        // Obter valores de ajuste da interface
+        const satVal = document.getElementById('amostra-sat') ? document.getElementById('amostra-sat').value : 100;
+        const conVal = document.getElementById('amostra-con') ? document.getElementById('amostra-con').value : 100;
+        const briVal = document.getElementById('amostra-bri') ? document.getElementById('amostra-bri').value : 100;
+        const shpVal = document.getElementById('amostra-shp') ? document.getElementById('amostra-shp').value : 0;
+
         // Criar um canvas temporário do tamanho exato da Cor
         const tempArteCanvas = document.createElement('canvas');
         tempArteCanvas.width = finalWidth;
         tempArteCanvas.height = finalHeight;
         const tempArteCtx = tempArteCanvas.getContext('2d');
         
+        // Aplicar filtros de cores nativos via Canvas context filter (Saturação, Contraste, Brilho)
+        tempArteCtx.filter = `saturate(${satVal}%) contrast(${conVal}%) brightness(${briVal}%)`;
+
         // Desenha a arte original centralizada no canvas temporário
         const dx = (finalWidth - arteCanvas.width) / 2;
         const dy = (finalHeight - arteCanvas.height) / 2;
         tempArteCtx.drawImage(arteCanvas, dx, dy, arteCanvas.width, arteCanvas.height);
         
-        // Aplicar efeito Sharpen (Nitidez) usando convolução
-        try {
-            const imgData = tempArteCtx.getImageData(0, 0, finalWidth, finalHeight);
-            const data = imgData.data;
-            const width = imgData.width;
-            const height = imgData.height;
-            
-            // Criar cópia para ler os valores originais
-            const copy = new Uint8ClampedArray(data);
-            
-            // Matriz de convolução Sharpen (Nitidez agressiva)
-            //  -1  -1  -1
-            //  -1   9  -1
-            //  -1  -1  -1
-            const weights = [
-                -1.5, -1.5, -1.5,
-                -1.5,  13.0, -1.5,
-                -1.5, -1.5, -1.5
-            ];
-            
-            const side = Math.round(Math.sqrt(weights.length));
-            const halfSide = Math.floor(side / 2);
-            
-            // Convolução de pixel por pixel
-            for (let y = 1; y < height - 1; y++) {
-                for (let x = 1; x < width - 1; x++) {
-                    const sy = y;
-                    const sx = x;
-                    const dstOff = (y * width + x) * 4;
-                    
-                    let r = 0, g = 0, b = 0;
-                    for (let cy = 0; cy < side; cy++) {
-                        for (let cx = 0; cx < side; cx++) {
-                            const scy = sy + cy - halfSide;
-                            const scx = sx + cx - halfSide;
-                            const srcOff = (scy * width + scx) * 4;
-                            const wt = weights[cy * side + cx];
-                            
-                            r += copy[srcOff] * wt;
-                            g += copy[srcOff + 1] * wt;
-                            b += copy[srcOff + 2] * wt;
+        // Resetar o filtro para futuras operações
+        tempArteCtx.filter = 'none';
+        
+        // Aplicar efeito Sharpen (Nitidez) usando convolução proporcional ao valor (0% a 100%)
+        if (shpVal > 0) {
+            try {
+                const imgData = tempArteCtx.getImageData(0, 0, finalWidth, finalHeight);
+                const data = imgData.data;
+                const width = imgData.width;
+                const height = imgData.height;
+                
+                // Criar cópia para ler os valores originais
+                const copy = new Uint8ClampedArray(data);
+                
+                // Fator de nitidez proporcional ao controle (máximo 1.8 de atenuação negativa)
+                const factor = (shpVal / 100) * 1.8;
+                const centerWeight = 1 + (4 * factor);
+                
+                // Matriz de convolução dinâmica:
+                //  0     -factor      0
+                // -factor centerWeight -factor
+                //  0     -factor      0
+                const weights = [
+                     0,      -factor,  0,
+                  -factor, centerWeight, -factor,
+                     0,      -factor,  0
+                ];
+                
+                const side = Math.round(Math.sqrt(weights.length));
+                const halfSide = Math.floor(side / 2);
+                
+                // Convolução de pixel por pixel
+                for (let y = 1; y < height - 1; y++) {
+                    for (let x = 1; x < width - 1; x++) {
+                        const sy = y;
+                        const sx = x;
+                        const dstOff = (y * width + x) * 4;
+                        
+                        let r = 0, g = 0, b = 0;
+                        for (let cy = 0; cy < side; cy++) {
+                            for (let cx = 0; cx < side; cx++) {
+                                const scy = sy + cy - halfSide;
+                                const scx = sx + cx - halfSide;
+                                const srcOff = (scy * width + scx) * 4;
+                                const wt = weights[cy * side + cx];
+                                
+                                r += copy[srcOff] * wt;
+                                g += copy[srcOff + 1] * wt;
+                                b += copy[srcOff + 2] * wt;
+                            }
                         }
+                        
+                        data[dstOff] = Math.min(255, Math.max(0, r));
+                        data[dstOff + 1] = Math.min(255, Math.max(0, g));
+                        data[dstOff + 2] = Math.min(255, Math.max(0, b));
                     }
-                    
-                    data[dstOff] = Math.min(255, Math.max(0, r));
-                    data[dstOff + 1] = Math.min(255, Math.max(0, g));
-                    data[dstOff + 2] = Math.min(255, Math.max(0, b));
                 }
+                tempArteCtx.putImageData(imgData, 0, 0);
+            } catch (e) {
+                console.error("Erro ao aplicar filtro de nitidez (sharpen):", e);
             }
-            tempArteCtx.putImageData(imgData, 0, 0);
-        } catch (e) {
-            console.error("Erro ao aplicar filtro de nitidez (sharpen):", e);
         }
         
         // Aplica o canvas temporário com multiply

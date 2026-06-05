@@ -772,6 +772,28 @@
                             </div>
                         </div>
                     </div>
+                    <div class="divider" style="margin: 16px 0 12px 0;"></div>
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        <span style="font-size:0.8rem; font-weight:700; color:var(--text-dim); text-transform:uppercase; display:block;">🎨 Ajustes da Camada de Arte</span>
+                        <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+                            <div class="form-group">
+                                <label style="display: flex; justify-content: space-between;">Saturação <span id="val-amostra-sat">100%</span></label>
+                                <input type="range" id="amostra-sat" min="0" max="200" value="100" style="width: 100%; cursor: pointer;" oninput="document.getElementById('val-amostra-sat').textContent = this.value + '%'; renderAmostraCombinada();">
+                            </div>
+                            <div class="form-group">
+                                <label style="display: flex; justify-content: space-between;">Contraste <span id="val-amostra-con">100%</span></label>
+                                <input type="range" id="amostra-con" min="50" max="150" value="100" style="width: 100%; cursor: pointer;" oninput="document.getElementById('val-amostra-con').textContent = this.value + '%'; renderAmostraCombinada();">
+                            </div>
+                            <div class="form-group">
+                                <label style="display: flex; justify-content: space-between;">Brilho <span id="val-amostra-bri">100%</span></label>
+                                <input type="range" id="amostra-bri" min="50" max="150" value="100" style="width: 100%; cursor: pointer;" oninput="document.getElementById('val-amostra-bri').textContent = this.value + '%'; renderAmostraCombinada();">
+                            </div>
+                            <div class="form-group">
+                                <label style="display: flex; justify-content: space-between;">Nitidez (Sharpen) <span id="val-amostra-shp">0%</span></label>
+                                <input type="range" id="amostra-shp" min="0" max="100" value="0" style="width: 100%; cursor: pointer;" oninput="document.getElementById('val-amostra-shp').textContent = this.value + '%'; renderAmostraCombinada();">
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Janelas de Visualização Uma Abaixo da Outra -->
