@@ -14,7 +14,7 @@ from firebase_admin import auth, credentials
 
 # Inicializar o Firebase Admin
 try:
-    firebase_admin.initialize_app()
+    firebase_admin.initialize_app(options={"projectId": "ideal-arte-e64f6"})
     print("[Firebase Admin] Inicializado com sucesso")
 except Exception as e:
     print(f"[Firebase Admin] Alerta na inicialização: {e}. Usando credenciais padrão se disponíveis.")

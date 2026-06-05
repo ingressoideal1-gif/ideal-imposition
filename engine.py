@@ -162,26 +162,36 @@ class ImpositionEngine:
         self.cfg = config
 
     def _load_base_as_pdf(self) -> fitz.Document:
-        """Abre o arquivo base (PDF, JPG, PNG) como documento fitz."""
+        """Abre o arquivo base (PDF, JPG, PNG) como documento fitz com dimensões físicas precisas."""
         f = self.cfg.base_file.lower()
         if f.endswith(".pdf"):
             return fitz.open(self.cfg.base_file)
         else:
-            # Imagem → converter para PDF temporário em memória
+            # Imagem → converter para PDF temporário em memória ajustando ao tamanho do item
             img = Image.open(self.cfg.base_file)
+            img_w, img_h = img.size
+            img.close()
             
-            # Obter o DPI da imagem (padrão 300 DPI para artes gráficas se não definido)
-            dpi = img.info.get('dpi')
-            if dpi and isinstance(dpi, tuple) and len(dpi) >= 2 and dpi[0] > 0:
-                dpi_val = float(dpi[0])
-            else:
-                dpi_val = 300.0
-                
-            buf = io.BytesIO()
-            # Salvar a imagem especificando a resolução correspondente
-            img.save(buf, format="PDF", dpi=(dpi_val, dpi_val), resolution=dpi_val)
-            buf.seek(0)
-            return fitz.open(stream=buf.read(), filetype="pdf")
+            doc = fitz.open()
+            w_pt = self.cfg.item_w
+            h_pt = self.cfg.item_h
+            page = doc.new_page(width=w_pt, height=h_pt)
+            
+            # Calcular dimensões para ajustar proporcionalmente e centralizar (equivalente ao frontend)
+            scale = min(w_pt / img_w, h_pt / img_h)
+            draw_w = img_w * scale
+            draw_h = img_h * scale
+            draw_x = (w_pt - draw_w) / 2
+            draw_y = (h_pt - draw_h) / 2
+            
+            rect = fitz.Rect(draw_x, draw_y, draw_x + draw_w, draw_y + draw_h)
+            page.insert_image(rect, filename=self.cfg.base_file)
+            
+            pdf_bytes = doc.write()
+            doc.close()
+            
+            return fitz.open(stream=pdf_bytes, filetype="pdf")
+
 
     def _render_element(self, page: fitz.Page, el: dict, cell_x0: float, cell_y0: float, val: int, csv_row: dict | None = None):
         """Renderiza um elemento VDP na posição absoluta da célula."""
