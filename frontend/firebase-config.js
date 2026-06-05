@@ -14,7 +14,7 @@ const firebaseConfig = {
 // Altere para a URL de produção quando publicar o backend online (ex: "https://ideal-imposition-api.onrender.com").
 const API_BASE_URL = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") && window.location.protocol !== 'file:'
     ? ""
-    : "https://ideal-imposition-api.onrender.com";
+    : "https://ideal-imposition.onrender.com";
 
 let dbFirebase = null;
 
