@@ -29,6 +29,8 @@ const state = {
     cores: [],
     fmtRotations: {}, // mapeia índice de célula -> ângulo (0, 90, 180, 270)
     fmtSelectedCellIndex: null, // índice da célula selecionada no preview
+    printMode: "front",
+    previewFace: "front",
 
     // Editor de Numeração
     numFormato: null,       // formato selecionado no editor
@@ -1625,7 +1627,7 @@ document.addEventListener('DOMContentLoaded', () => {
 window.addElement = function (type) {
     state.numElCounter++;
     const id = `el_${state.numElCounter}`;
-    const base = { id, type, x_mm: type === 'PICOTE' ? 25 : 5, y_mm: type === 'PICOTE' ? 0 : 5, rotation: 0, color: type === 'PICOTE' ? '#ef4444' : '#000000' };
+    const base = { id, type, x_mm: type === 'PICOTE' ? 25 : 5, y_mm: type === 'PICOTE' ? 0 : 5, rotation: 0, color: type === 'PICOTE' ? '#ef4444' : '#000000', face: 'both' };
 
     if (type === 'TEXT') Object.assign(base, { font_size: 12, font_name: 'helv', pad: 6, prefix: '', suffix: '' });
     if (type === 'FIXED') Object.assign(base, { font_size: 12, font_name: 'helv', fixed: true, fixed_value: 'Texto' });
@@ -1680,6 +1682,13 @@ function renderElementsList() {
                 <div class="element-card-fields" style="grid-template-columns: 1fr 1fr;">
                     <div class="form-group"><label>X (mm)</label><input class="form-control el-x" type="number" value="${el.x_mm.toFixed(1)}" step="0.5" onchange="updateEl('${el.id}','x_mm',+this.value)"></div>
                     <div class="form-group"><label>Cor</label><input class="form-control" type="color" value="${el.color || '#ef4444'}" onchange="updateEl('${el.id}','color',this.value)"></div>
+                    <div class="form-group"><label>Face</label>
+                        <select class="form-control" onchange="updateEl('${el.id}','face',this.value)">
+                            <option value="both" ${el.face === 'both' || !el.face ? 'selected' : ''}>Frente e Verso</option>
+                            <option value="front" ${el.face === 'front' ? 'selected' : ''}>Apenas Frente</option>
+                            <option value="back" ${el.face === 'back' ? 'selected' : ''}>Apenas Verso</option>
+                        </select>
+                    </div>
                 </div>
             </div>`;
         }
@@ -1781,6 +1790,13 @@ function renderElementsList() {
                 ${el.type !== 'SVG' ? `
                 <div class="form-group"><label>Cor</label><input class="form-control" type="color" value="${el.color || '#000000'}" onchange="updateEl('${el.id}','color',this.value)"></div>
                 ` : ''}
+                <div class="form-group"><label>Face</label>
+                    <select class="form-control" onchange="updateEl('${el.id}','face',this.value)">
+                        <option value="both" ${el.face === 'both' || !el.face ? 'selected' : ''}>Frente e Verso</option>
+                        <option value="front" ${el.face === 'front' ? 'selected' : ''}>Apenas Frente</option>
+                        <option value="back" ${el.face === 'back' ? 'selected' : ''}>Apenas Verso</option>
+                    </select>
+                </div>
                 ${(el.type !== 'FIXED' && el.type !== 'SVG') ? `
                 <div class="form-group">
                     <label>Origem</label>
@@ -2129,6 +2145,8 @@ function drawPreview() {
 
     document.getElementById('preview-sheet-num').textContent = `Folha 1 de ${total_sheets}`;
 
+    const isBack = state.previewFace === 'back';
+
     for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
             const P = row * cols + col;
@@ -2142,7 +2160,9 @@ function drawPreview() {
 
             if (item_index >= total_items) continue;
 
-            const cell_x0 = start_x + col * (item_w + gap_h);
+            // Para o verso da folha (tombamento horizontal), espelhamos as colunas fisicamente
+            const col_fisico = isBack ? (cols - 1 - col) : col;
+            const cell_x0 = start_x + col_fisico * (item_w + gap_h);
             const cell_y0 = start_y + row * (item_h + gap_v);
 
             const cw = item_w * scale;
@@ -2151,7 +2171,10 @@ function drawPreview() {
             // Centro da célula para rotação
             const centerX = (cell_x0 + item_w / 2) * scale;
             const centerY = (cell_y0 + item_h / 2) * scale;
-            const cellRotation = fmt.rotations ? (parseInt(fmt.rotations[P]) || 0) : 0;
+            
+            // Inverter a rotação da célula no verso para bater frente/verso
+            const cellRotationFrente = fmt.rotations ? (parseInt(fmt.rotations[P]) || 0) : 0;
+            const cellRotation = isBack ? ((360 - cellRotationFrente) % 360) : cellRotationFrente;
 
             ctx.save();
             ctx.translate(centerX, centerY);
@@ -2164,7 +2187,7 @@ function drawPreview() {
             ctx.lineWidth = 0.5;
             ctx.strokeRect(-cw / 2, -ch / 2, cw, ch);
 
-            if (state.impArtImage) {
+            if (state.impArtImage || state.impArtPdfDoc) {
                 // Dimensões originais da arte
                 const art_orig_w = state.impArtWidth;
                 const art_orig_h = state.impArtHeight;
@@ -2178,19 +2201,26 @@ function drawPreview() {
                 const dh = art_orig_h * scale;
 
                 if (dw > 0 && dh > 0) {
-                    if (schema === "pdf_multiple" && state.impArtPdfDoc) {
-                        // Renderizar página correspondente a item_index do PDF sob demanda
-                        const pageNum = item_index + 1;
+                    if (state.impArtPdfDoc) {
+                        // Determinar qual página física real do PDF base exibir
+                        let pageNum = 1;
+                        if (schema === "pdf_multiple") {
+                            pageNum = isBack ? (item_index * 2 + 2) : (item_index * 2 + 1);
+                        } else {
+                            pageNum = isBack ? 2 : 1;
+                        }
+
                         if (pageNum <= state.impArtPdfDoc.numPages) {
                             if (!state.impArtPagesCache) state.impArtPagesCache = {};
                             if (!state.impArtPagesRendering) state.impArtPagesRendering = {};
 
-                            const cachedPage = state.impArtPagesCache[item_index];
+                            const cacheKey = `page_${pageNum}`;
+                            const cachedPage = state.impArtPagesCache[cacheKey];
                             if (cachedPage) {
                                 ctx.drawImage(cachedPage, offH - dw / 2, offV - dh / 2, dw, dh);
                             } else {
-                                if (!state.impArtPagesRendering[item_index]) {
-                                    state.impArtPagesRendering[item_index] = true;
+                                if (!state.impArtPagesRendering[cacheKey]) {
+                                    state.impArtPagesRendering[cacheKey] = true;
                                     (async () => {
                                         try {
                                             const page = await state.impArtPdfDoc.getPage(pageNum);
@@ -2203,12 +2233,12 @@ function drawPreview() {
                                             octx.fillRect(0, 0, off.width, off.height);
                                             await page.render({ canvasContext: octx, viewport: vp }).promise;
                                             
-                                            state.impArtPagesCache[item_index] = off;
+                                            state.impArtPagesCache[cacheKey] = off;
                                             drawPreview(); // Redesenhar o preview principal
                                         } catch (err) {
                                             console.error(`Erro ao renderizar pág. ${pageNum}:`, err);
                                         } finally {
-                                            delete state.impArtPagesRendering[item_index];
+                                            delete state.impArtPagesRendering[cacheKey];
                                         }
                                     })();
                                 }
@@ -2226,13 +2256,24 @@ function drawPreview() {
                                 ctx.fillText(`Carregando Pág. ${pageNum}...`, offH, offV);
                             }
                         } else {
-                            // Página excedente, desenha vazio
-                            ctx.fillStyle = '#f8fafc';
+                            // Página excedente ou sem verso, desenha vazio
+                            ctx.fillStyle = '#ffffff';
                             ctx.fillRect(offH - dw / 2, offV - dh / 2, dw, dh);
+                            ctx.strokeStyle = '#cbd5e1';
+                            ctx.lineWidth = 0.5;
+                            ctx.strokeRect(offH - dw / 2, offV - dh / 2, dw, dh);
                         }
-                    } else {
-                        // Comportamento padrão: desenhar imagem base de preview
-                        ctx.drawImage(state.impArtImage, 0, 0, state.impArtImage.width, state.impArtImage.height, offH - dw / 2, offV - dh / 2, dw, dh);
+                    } else if (state.impArtImage) {
+                        if (isBack) {
+                            // Imagem única não tem verso de arte
+                            ctx.fillStyle = '#ffffff';
+                            ctx.fillRect(offH - dw / 2, offV - dh / 2, dw, dh);
+                            ctx.strokeStyle = '#cbd5e1';
+                            ctx.lineWidth = 0.5;
+                            ctx.strokeRect(offH - dw / 2, offV - dh / 2, dw, dh);
+                        } else {
+                            ctx.drawImage(state.impArtImage, 0, 0, state.impArtImage.width, state.impArtImage.height, offH - dw / 2, offV - dh / 2, dw, dh);
+                        }
                     }
                 }
             } else {
@@ -2254,6 +2295,9 @@ function drawPreview() {
             if (num && num.elements) {
                 const val = start + item_index;
                 num.elements.forEach(el => {
+                    // Pular elementos que não são da face ativa
+                    if (isBack && el.face === 'front') return;
+                    if (!isBack && el.face === 'back') return;
                     // Posição do elemento relativa ao canto superior esquerdo da célula
                     const el_x = el.x_mm * MM2PT * scale;
                     const el_y = el.y_mm * MM2PT * scale;
@@ -2378,10 +2422,36 @@ function updateImpSummary() {
     const schema = document.getElementById('imp-schema').value;
     const isPdfMultiple = (schema === "pdf_multiple");
 
+    // Atualizar modo de impressão no estado global
+    const printModeEl = document.getElementById('imp-print-mode');
+    state.printMode = printModeEl ? printModeEl.value : 'front';
+    
+    // Exibir/ocultar alternador de face para o preview
+    const faceContainer = document.getElementById('preview-face-container');
+    if (faceContainer) {
+        if (state.printMode === 'duplex') {
+            faceContainer.style.display = 'block';
+        } else {
+            faceContainer.style.display = 'none';
+            state.previewFace = 'front';
+            const btnFront = document.getElementById('btn-preview-front');
+            const btnBack = document.getElementById('btn-preview-back');
+            if (btnFront) {
+                btnFront.style.background = 'var(--blue)';
+                btnFront.style.color = 'white';
+            }
+            if (btnBack) {
+                btnBack.style.background = 'rgba(255,255,255,0.06)';
+                btnBack.style.color = 'var(--text-dim)';
+            }
+        }
+    }
+
     if (isPdfMultiple) {
         state.csvData = null;
         state.csvFile = null;
         const totalPages = state.impArtPdfDoc ? state.impArtPdfDoc.numPages : 1;
+        const finalItems = state.printMode === 'duplex' ? Math.ceil(totalPages / 2) : totalPages;
         
         // Travar e preencher campos
         const impStart = document.getElementById('imp-start');
@@ -2391,7 +2461,7 @@ function updateImpSummary() {
             impStart.setAttribute('disabled', 'true');
         }
         if (impEnd) {
-            impEnd.value = totalPages;
+            impEnd.value = finalItems;
             impEnd.setAttribute('disabled', 'true');
         }
     } else if (num && num.csv_data && num.csv_data.length) {
@@ -2438,7 +2508,8 @@ function updateImpSummary() {
 
     let total = 1;
     if (isPdfMultiple) {
-        total = state.impArtPdfDoc ? state.impArtPdfDoc.numPages : 1;
+        const totalPages = state.impArtPdfDoc ? state.impArtPdfDoc.numPages : 1;
+        total = state.printMode === 'duplex' ? Math.ceil(totalPages / 2) : totalPages;
     } else if (state.csvData) {
         total = state.csvData.length;
     } else {
@@ -2525,7 +2596,8 @@ window.runImposition = async function () {
         seq_start: start,
         seq_end: end,
         seq_increment: 1,
-        schema
+        schema,
+        print_mode: state.printMode
     };
 
     const formData = new FormData();
@@ -3919,4 +3991,30 @@ document.addEventListener('DOMContentLoaded', () => {
         amArteInp._listenerSet = true;
     }
 })();
+
+window.setPreviewFace = function (face) {
+    state.previewFace = face;
+    const btnFront = document.getElementById('btn-preview-front');
+    const btnBack = document.getElementById('btn-preview-back');
+    if (face === 'front') {
+        if (btnFront) {
+            btnFront.style.background = 'var(--blue)';
+            btnFront.style.color = 'white';
+        }
+        if (btnBack) {
+            btnBack.style.background = 'rgba(255,255,255,0.06)';
+            btnBack.style.color = 'var(--text-dim)';
+        }
+    } else {
+        if (btnFront) {
+            btnFront.style.background = 'rgba(255,255,255,0.06)';
+            btnFront.style.color = 'var(--text-dim)';
+        }
+        if (btnBack) {
+            btnBack.style.background = 'var(--blue)';
+            btnBack.style.color = 'white';
+        }
+    }
+    drawPreview();
+};
 
