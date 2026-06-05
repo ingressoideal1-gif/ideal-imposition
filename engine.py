@@ -377,9 +377,9 @@ class ImpositionEngine:
                     rect_art = fitz.Rect(art_x0, art_y0, art_x1, art_y1)
                     
                     if cell_rotation != 0:
-                        out_page_front.show_pdf_page(rect_art, doc_base, page_idx_front, keep_proportion=True, rotate=cell_rotation)
+                        out_page_front.show_pdf_page(rect_art, doc_base, page_idx_front, keep_proportion=True, rotate=cell_rotation, clip=page_base.rect)
                     else:
-                        out_page_front.show_pdf_page(rect_art, doc_base, page_idx_front)
+                        out_page_front.show_pdf_page(rect_art, doc_base, page_idx_front, clip=page_base.rect)
 
                     # Renderizar VDP da Frente
                     val = cfg.seq_start + (item_index * cfg.seq_increment)
@@ -465,9 +465,9 @@ class ImpositionEngine:
                             rect_art = fitz.Rect(art_x0, art_y0, art_x1, art_y1)
                             
                             if cell_rotation != 0:
-                                out_page_back.show_pdf_page(rect_art, doc_base, page_idx_back, keep_proportion=True, rotate=cell_rotation)
+                                out_page_back.show_pdf_page(rect_art, doc_base, page_idx_back, keep_proportion=True, rotate=cell_rotation, clip=page_base.rect)
                             else:
-                                out_page_back.show_pdf_page(rect_art, doc_base, page_idx_back)
+                                out_page_back.show_pdf_page(rect_art, doc_base, page_idx_back, clip=page_base.rect)
 
                         # Renderizar VDP do Verso
                         val = cfg.seq_start + (item_index * cfg.seq_increment)

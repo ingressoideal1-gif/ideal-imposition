@@ -160,6 +160,7 @@ async def impose_file(
             seq_increment=data.get("seq_increment", 1),
             layout_schema=data.get("schema", "sequential"),
             csv_data=csv_data,
+            print_mode=data.get("print_mode", "front"),
         )
 
         engine = ImpositionEngine(config)
