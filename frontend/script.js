@@ -2070,10 +2070,19 @@ window.runImposition = async function () {
     try {
         let baseUrl = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : '';
         
-        // Verifica se o Agente Local está ativo para processar a imposição localmente de forma instantânea
+        // Verifica se o Agente Local está ativo para processar a imposição localmente de forma instantânea (com timeout de 300ms)
         let localActive = false;
         try {
-            const agentCheck = await fetch("http://localhost:9000/", { method: "GET" }).catch(() => null);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 300);
+            
+            const agentCheck = await fetch("http://localhost:9000/", { 
+                method: "GET",
+                signal: controller.signal 
+            }).catch(() => null);
+            
+            clearTimeout(timeoutId);
+            
             if (agentCheck && agentCheck.ok) {
                 const checkData = await agentCheck.json().catch(() => ({}));
                 if (checkData.status === "running") {
