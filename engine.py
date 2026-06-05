@@ -138,7 +138,19 @@ class ImpositionConfig:
         self.seq_end = seq_end
         self.seq_increment = seq_increment
         self.csv_data = csv_data
-        if csv_data:
+        if layout_schema == "pdf_multiple":
+            # Para Pdf Múltiplo, a quantidade total de itens é a quantidade de páginas do PDF de entrada
+            try:
+                if base_file.lower().endswith(".pdf"):
+                    temp_doc = fitz.open(base_file)
+                    self.total_items = len(temp_doc)
+                    temp_doc.close()
+                else:
+                    self.total_items = 1
+            except Exception as ex:
+                print(f"Erro ao contar paginas do PDF: {ex}")
+                self.total_items = 1
+        elif csv_data:
             self.total_items = len(csv_data)
         else:
             self.total_items = math.floor((seq_end - seq_start) / seq_increment) + 1
@@ -327,6 +339,12 @@ class ImpositionEngine:
                     if item_index >= cfg.total_items:
                         continue
 
+                    # Determinar o índice da página do PDF base
+                    page_idx = item_index if cfg.layout_schema == "pdf_multiple" and item_index < len(doc_base) else 0
+                    page_base = doc_base[page_idx]
+                    base_w = page_base.rect.width
+                    base_h = page_base.rect.height
+
                     # Posição da célula (canto superior esquerdo)
                     cell_x0 = start_x + col * (cfg.item_w + cfg.gap_h)
                     cell_y0 = start_y + row * (cfg.item_h + cfg.gap_v)
@@ -357,9 +375,9 @@ class ImpositionEngine:
                         # Porém, o offset da arte também deve sofrer a rotação. 
                         # Para simplificar e garantir a fidelidade, faremos show_pdf_page diretamente no rect da arte rotacionada
                         # Rotacionamos a arte sobre seu próprio centro
-                        out_page.show_pdf_page(rect_art, doc_base, 0, keep_proportion=True, rotate=cell_rotation)
+                        out_page.show_pdf_page(rect_art, doc_base, page_idx, keep_proportion=True, rotate=cell_rotation)
                     else:
-                        out_page.show_pdf_page(rect_art, doc_base, 0)
+                        out_page.show_pdf_page(rect_art, doc_base, page_idx)
 
                     # Renderizar elementos VDP
                     val = cfg.seq_start + (item_index * cfg.seq_increment)

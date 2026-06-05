@@ -1997,6 +1997,12 @@ async function loadImpArtFile(file) {
                 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            
+            // Salvar documento PDF e inicializar caches para paginação especial de Pdf Múltiplo
+            state.impArtPdfDoc = pdf;
+            state.impArtPagesCache = {};
+            state.impArtPagesRendering = {};
+
             const page = await pdf.getPage(1);
             const vp = page.getViewport({ scale: 1 });
 
@@ -2012,7 +2018,27 @@ async function loadImpArtFile(file) {
             state.impArtImage = off;
             state.impArtWidth = vp.width; // em pt
             state.impArtHeight = vp.height; // em pt
+            
+            // Se estiver em Pdf Múltiplo, atualiza limites
+            const schema = document.getElementById('imp-schema').value;
+            if (schema === "pdf_multiple") {
+                const impStart = document.getElementById('imp-start');
+                const impEnd = document.getElementById('imp-end');
+                if (impStart) {
+                    impStart.value = 1;
+                    impStart.setAttribute('disabled', 'true');
+                }
+                if (impEnd) {
+                    impEnd.value = pdf.numPages;
+                    impEnd.setAttribute('disabled', 'true');
+                }
+            }
         } else {
+            // Se for imagem normal, limpa referências de PDF
+            state.impArtPdfDoc = null;
+            state.impArtPagesCache = {};
+            state.impArtPagesRendering = {};
+
             const img = new Image();
             img.src = URL.createObjectURL(file);
             await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
@@ -2026,11 +2052,14 @@ async function loadImpArtFile(file) {
             state.impArtHeight = img.height * (72 / dpi);
         }
         toast('Arte carregada para preview!', 'success');
-        drawPreview();
+        updateImpSummary(); // Recalcular sumário e forçar redesenho do preview
     } catch (e) {
         toast('Erro ao carregar arte: ' + e.message, 'error');
         state.impArtImage = null;
-        drawPreview();
+        state.impArtPdfDoc = null;
+        state.impArtPagesCache = {};
+        state.impArtPagesRendering = {};
+        updateImpSummary();
     }
 }
 
@@ -2149,7 +2178,62 @@ function drawPreview() {
                 const dh = art_orig_h * scale;
 
                 if (dw > 0 && dh > 0) {
-                    ctx.drawImage(state.impArtImage, 0, 0, state.impArtImage.width, state.impArtImage.height, offH - dw / 2, offV - dh / 2, dw, dh);
+                    if (schema === "pdf_multiple" && state.impArtPdfDoc) {
+                        // Renderizar página correspondente a item_index do PDF sob demanda
+                        const pageNum = item_index + 1;
+                        if (pageNum <= state.impArtPdfDoc.numPages) {
+                            if (!state.impArtPagesCache) state.impArtPagesCache = {};
+                            if (!state.impArtPagesRendering) state.impArtPagesRendering = {};
+
+                            const cachedPage = state.impArtPagesCache[item_index];
+                            if (cachedPage) {
+                                ctx.drawImage(cachedPage, offH - dw / 2, offV - dh / 2, dw, dh);
+                            } else {
+                                if (!state.impArtPagesRendering[item_index]) {
+                                    state.impArtPagesRendering[item_index] = true;
+                                    (async () => {
+                                        try {
+                                            const page = await state.impArtPdfDoc.getPage(pageNum);
+                                            const vp = page.getViewport({ scale: 1.5 });
+                                            const off = document.createElement('canvas');
+                                            off.width = vp.width;
+                                            off.height = vp.height;
+                                            const octx = off.getContext('2d');
+                                            octx.fillStyle = '#ffffff';
+                                            octx.fillRect(0, 0, off.width, off.height);
+                                            await page.render({ canvasContext: octx, viewport: vp }).promise;
+                                            
+                                            state.impArtPagesCache[item_index] = off;
+                                            drawPreview(); // Redesenhar o preview principal
+                                        } catch (err) {
+                                            console.error(`Erro ao renderizar pág. ${pageNum}:`, err);
+                                        } finally {
+                                            delete state.impArtPagesRendering[item_index];
+                                        }
+                                    })();
+                                }
+                                
+                                // Placeholder enquanto carrega a página
+                                ctx.fillStyle = '#f1f5f9';
+                                ctx.fillRect(offH - dw / 2, offV - dh / 2, dw, dh);
+                                ctx.strokeStyle = '#cbd5e1';
+                                ctx.lineWidth = 0.5;
+                                ctx.strokeRect(offH - dw / 2, offV - dh / 2, dw, dh);
+                                ctx.fillStyle = '#94a3b8';
+                                ctx.font = `${Math.max(6, Math.round(ch * 0.08))}px Inter`;
+                                ctx.textAlign = 'center';
+                                ctx.textBaseline = 'middle';
+                                ctx.fillText(`Carregando Pág. ${pageNum}...`, offH, offV);
+                            }
+                        } else {
+                            // Página excedente, desenha vazio
+                            ctx.fillStyle = '#f8fafc';
+                            ctx.fillRect(offH - dw / 2, offV - dh / 2, dw, dh);
+                        }
+                    } else {
+                        // Comportamento padrão: desenhar imagem base de preview
+                        ctx.drawImage(state.impArtImage, 0, 0, state.impArtImage.width, state.impArtImage.height, offH - dw / 2, offV - dh / 2, dw, dh);
+                    }
                 }
             } else {
                 ctx.fillStyle = '#f8fafc';
@@ -2291,7 +2375,26 @@ function updateImpSummary() {
             drawPreview();
         };
     }
-    if (num && num.csv_data && num.csv_data.length) {
+    const schema = document.getElementById('imp-schema').value;
+    const isPdfMultiple = (schema === "pdf_multiple");
+
+    if (isPdfMultiple) {
+        state.csvData = null;
+        state.csvFile = null;
+        const totalPages = state.impArtPdfDoc ? state.impArtPdfDoc.numPages : 1;
+        
+        // Travar e preencher campos
+        const impStart = document.getElementById('imp-start');
+        const impEnd = document.getElementById('imp-end');
+        if (impStart) {
+            impStart.value = 1;
+            impStart.setAttribute('disabled', 'true');
+        }
+        if (impEnd) {
+            impEnd.value = totalPages;
+            impEnd.setAttribute('disabled', 'true');
+        }
+    } else if (num && num.csv_data && num.csv_data.length) {
         state.csvData = num.csv_data;
         state.csvFile = null; // Banco embutido
         
@@ -2307,8 +2410,11 @@ function updateImpSummary() {
             impEnd.setAttribute('disabled', 'true');
         }
     } else {
-        state.csvData = null;
-        state.csvFile = null;
+        const csvFileEl = document.getElementById('csv-file');
+        if (!csvFileEl || !csvFileEl.files.length) {
+            state.csvData = null;
+            state.csvFile = null;
+        }
         
         const impStart = document.getElementById('imp-start');
         const impEnd = document.getElementById('imp-end');
@@ -2330,7 +2436,14 @@ function updateImpSummary() {
         return;
     }
 
-    const total = state.csvData ? state.csvData.length : (end - start + 1);
+    let total = 1;
+    if (isPdfMultiple) {
+        total = state.impArtPdfDoc ? state.impArtPdfDoc.numPages : 1;
+    } else if (state.csvData) {
+        total = state.csvData.length;
+    } else {
+        total = end - start + 1;
+    }
     const perSheet = fmt.cols * fmt.rows;
     const sheets = Math.ceil(total / perSheet);
 
