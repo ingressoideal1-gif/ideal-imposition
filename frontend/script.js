@@ -1050,7 +1050,8 @@ function selectElId(id, multi = false) {
     if (state.selectedElId) {
         const card = document.getElementById(`elcard-${state.selectedElId}`);
         if (card) {
-            card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            // Desativado scrollIntoView automático para evitar rolagem incômoda da página inteira
+            // card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
     }
 }
@@ -1524,7 +1525,8 @@ function selectElementCard(id) {
     const card = document.getElementById(`elcard-${id}`);
     if (card) {
         card.classList.add('selected');
-        card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        // Desativado scrollIntoView automático para evitar rolagem incômoda da página inteira
+        // card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 }
 
