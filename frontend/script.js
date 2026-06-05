@@ -842,12 +842,12 @@ function drawElement(ctx, el, S) {
         const fmt = state.numFormato;
         const h_px = fmt ? fmt.height_mm * S : 100 * S;
         ctx.strokeStyle = color;
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 1.33; // 1pt = 1.33px
         if (isSelected) {
             ctx.strokeStyle = '#3b82f6';
             ctx.lineWidth = 2.0;
         }
-        ctx.setLineDash([4, 4]);
+        ctx.setLineDash([4, 2]);
         ctx.beginPath();
         // A linha é vertical e cruza o formato inteiro.
         // Como o contexto foi transladado para (x, y), a coordenada local Y vai de -y até (h_px - y)
