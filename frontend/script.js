@@ -26,6 +26,7 @@ const state = {
     formatos: [],
     numeracoes: [],
     saidas: [],
+    cores: [],
 
     // Editor de Numeração
     numFormato: null,       // formato selecionado no editor
@@ -75,7 +76,7 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
 // ─── API Helpers ──────────────────────────────────────────────────────────────
 async function api(method, path, body = null) {
     // Se o Firebase estiver ativo e for rota de banco de dados
-    if (typeof dbFirebase !== 'undefined' && dbFirebase && (path.startsWith('/formatos') || path.startsWith('/numeracoes') || path.startsWith('/saidas'))) {
+    if (typeof dbFirebase !== 'undefined' && dbFirebase && (path.startsWith('/formatos') || path.startsWith('/numeracoes') || path.startsWith('/saidas') || path.startsWith('/cores'))) {
         const parts = path.substring(1).split('/');
         const col = parts[0];
         const docId = parts[1] || null;
@@ -140,14 +141,16 @@ async function api(method, path, body = null) {
 // ─── Load All Data ────────────────────────────────────────────────────────────
 async function loadAll() {
     try {
-        const [fmts, nums, sais] = await Promise.all([
+        const [fmts, nums, sais, cores] = await Promise.all([
             api('GET', '/formatos'),
             api('GET', '/numeracoes'),
             api('GET', '/saidas'),
+            api('GET', '/cores').catch(() => []),
         ]);
         state.formatos = fmts;
         state.numeracoes = nums;
         state.saidas = sais;
+        state.cores = cores || [];
         renderAll();
     } catch (e) {
         toast('Erro ao carregar dados: ' + e.message, 'error');
@@ -158,6 +161,7 @@ function renderAll() {
     renderFormatos();
     renderNumeracoes();
     renderSaidas();
+    renderCores();
     updateBadges();
     populateSelects();
 }
@@ -166,6 +170,8 @@ function updateBadges() {
     document.getElementById('badge-formatos').textContent = state.formatos.length;
     document.getElementById('badge-numeracao').textContent = state.numeracoes.length;
     document.getElementById('badge-saidas').textContent = state.saidas.length;
+    const badgeCores = document.getElementById('badge-cores');
+    if (badgeCores) badgeCores.textContent = state.cores.length;
 }
 
 // ─── FORMATOS ─────────────────────────────────────────────────────────────────
@@ -395,6 +401,168 @@ window.setPreset = (w, h) => {
     document.getElementById('sai-h').value = h;
 };
 
+// ─── CORES ───────────────────────────────────────────────────────────────────
+let corPdfBase64 = "";
+let corPdfFilename = "";
+
+// Event Listener para ler o arquivo PDF em Base64
+document.getElementById('cor-pdf-file')?.addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+        toast('Selecione apenas arquivos PDF.', 'error');
+        e.target.value = '';
+        return;
+    }
+    const reader = new FileReader();
+    reader.onload = function(evt) {
+        corPdfBase64 = evt.target.result;
+        corPdfFilename = file.name;
+        document.getElementById('cor-pdf-file-name').textContent = "📎 " + file.name;
+        document.getElementById('btn-remove-cor-pdf').style.display = 'inline-flex';
+    };
+    reader.readAsDataURL(file);
+});
+
+function clearCorPdfFile() {
+    corPdfBase64 = "";
+    corPdfFilename = "";
+    const fileEl = document.getElementById('cor-pdf-file');
+    if (fileEl) fileEl.value = "";
+    const labelEl = document.getElementById('cor-pdf-file-name');
+    if (labelEl) labelEl.textContent = "";
+    const btnRemove = document.getElementById('btn-remove-cor-pdf');
+    if (btnRemove) btnRemove.style.display = 'none';
+}
+window.clearCorPdfFile = clearCorPdfFile;
+
+function onCorFormatoSelect() {
+    const fmtId = document.getElementById('cor-formato').value;
+    if (!fmtId) return;
+    const fmt = state.formatos.find(f => f.id === fmtId);
+    if (fmt) {
+        document.getElementById('cor-w').value = fmt.width_mm;
+        document.getElementById('cor-h').value = fmt.height_mm;
+    }
+}
+window.onCorFormatoSelect = onCorFormatoSelect;
+
+function renderCores() {
+    const tbody = document.getElementById('tbody-cores');
+    const empty = document.getElementById('empty-cores');
+    if (!tbody) return;
+    if (!state.cores || !state.cores.length) {
+        tbody.innerHTML = '';
+        if (empty) empty.style.display = 'block';
+        return;
+    }
+    if (empty) empty.style.display = 'none';
+    tbody.innerHTML = state.cores.map(c => {
+        const fmt = state.formatos.find(f => f.id === c.formato_id);
+        const fmtName = fmt ? fmt.name : 'Formato Excluído';
+        const pdfLink = c.pdf_base64 
+            ? `<a href="${c.pdf_base64}" download="${c.pdf_filename || 'referencia.pdf'}" class="badge badge-teal" style="text-decoration:none;">📥 Baixar PDF</a>`
+            : '<span style="color:var(--text-faint)">Sem arquivo</span>';
+            
+        return `
+        <tr>
+            <td><strong>${c.name}</strong></td>
+            <td>${fmtName}</td>
+            <td>${c.width_mm} × ${c.height_mm} mm</td>
+            <td>${pdfLink}</td>
+            <td class="actions-cell">
+                <button class="btn btn-sm btn-ghost" onclick="editCor('${c.id}')">✏️ Editar</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteCor('${c.id}')">🗑️</button>
+            </td>
+        </tr>
+    `}).join('');
+}
+window.renderCores = renderCores;
+
+async function saveCor() {
+    const id = document.getElementById('cor-id').value;
+    const name = document.getElementById('cor-name').value.trim();
+    const formatoId = document.getElementById('cor-formato').value;
+    const w = parseFloat(document.getElementById('cor-w').value);
+    const h = parseFloat(document.getElementById('cor-h').value);
+
+    if (!name) return toast('Informe o nome da cor.', 'error');
+    if (!formatoId) return toast('Selecione um formato base.', 'error');
+    if (isNaN(w) || w <= 0 || isNaN(h) || h <= 0) return toast('Informe dimensões de tamanho válidas.', 'error');
+
+    const data = {
+        name,
+        formato_id: formatoId,
+        width_mm: w,
+        height_mm: h,
+        pdf_base64: corPdfBase64 || null,
+        pdf_filename: corPdfFilename || ""
+    };
+
+    try {
+        if (id) {
+            await api('PUT', `/cores/${id}`, data);
+            toast('Cor atualizada!', 'success');
+        } else {
+            await api('POST', '/cores', data);
+            toast('Cor cadastrada!', 'success');
+        }
+        cancelCorEdit();
+        await loadAll();
+    } catch (e) {
+        toast(e.message, 'error');
+    }
+}
+window.saveCor = saveCor;
+
+function editCor(id) {
+    const c = state.cores.find(x => x.id === id);
+    if (!c) return;
+    document.getElementById('cor-id').value = c.id;
+    document.getElementById('cor-name').value = c.name;
+    document.getElementById('cor-formato').value = c.formato_id;
+    document.getElementById('cor-w').value = c.width_mm;
+    document.getElementById('cor-h').value = c.height_mm;
+    
+    if (c.pdf_base64) {
+        corPdfBase64 = c.pdf_base64;
+        corPdfFilename = c.pdf_filename || "referencia.pdf";
+        document.getElementById('cor-pdf-file-name').textContent = "📎 " + corPdfFilename;
+        document.getElementById('btn-remove-cor-pdf').style.display = 'inline-flex';
+    } else {
+        clearCorPdfFile();
+    }
+    
+    document.getElementById('cor-form-title').textContent = 'Editar Cor';
+    document.getElementById('btn-cor-cancel').style.display = 'inline-flex';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+window.editCor = editCor;
+
+function cancelCorEdit() {
+    document.getElementById('cor-id').value = '';
+    document.getElementById('cor-name').value = '';
+    document.getElementById('cor-formato').value = '';
+    document.getElementById('cor-w').value = '';
+    document.getElementById('cor-h').value = '';
+    clearCorPdfFile();
+    document.getElementById('cor-form-title').textContent = 'Nova Cor';
+    document.getElementById('btn-cor-cancel').style.display = 'none';
+}
+window.cancelCorEdit = cancelCorEdit;
+
+async function deleteCor(id) {
+    if (!confirm('Excluir esta cor?')) return;
+    try {
+        await api('DELETE', `/cores/${id}`);
+        toast('Cor excluída.', 'success');
+        await loadAll();
+    } catch (e) {
+        toast(e.message, 'error');
+    }
+}
+window.deleteCor = deleteCor;
+
 // ─── SELECTS (população) ──────────────────────────────────────────────────────
 function populateSelects() {
     // Numeração — select de formatos
@@ -403,6 +571,15 @@ function populateSelects() {
     selNumFmt.innerHTML = '<option value="">— Selecione um Formato —</option>' +
         state.formatos.map(f => `<option value="${f.id}">${f.name} (${f.width_mm}×${f.height_mm}mm)</option>`).join('');
     if (curNumFmt) selNumFmt.value = curNumFmt;
+
+    // Cores - select de formatos
+    const selCorFmt = document.getElementById('cor-formato');
+    if (selCorFmt) {
+        const curCorFmt = selCorFmt.value;
+        selCorFmt.innerHTML = '<option value="">— Selecione —</option>' +
+            state.formatos.map(f => `<option value="${f.id}">${f.name}</option>`).join('');
+        if (curCorFmt) selCorFmt.value = curCorFmt;
+    }
 
     // Catálogo - filtro de formato
     const selCatFmt = document.getElementById('catalogo-filter-format');

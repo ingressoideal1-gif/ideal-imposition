@@ -51,7 +51,8 @@ DEFAULT_DB = {
             "height_mm": 420,
             "file_format": "pdf"
         }
-    ]
+    ],
+    "cores": []
 }
 
 # ─── Internal helpers ──────────────────────────────────────────────────────────
@@ -235,4 +236,43 @@ def update_saida(sai_id: str, data: dict) -> bool:
 def delete_saida(sai_id: str):
     db = _get_db()
     db["saidas"] = [s for s in db.get("saidas", []) if s["id"] != sai_id]
+    _save_db(db)
+
+
+# ─── CORES ───────────────────────────────────────────────────────────────────
+
+def get_cores() -> list:
+    return _get_db().get("cores", [])
+
+
+def get_cor(cor_id: str) -> dict | None:
+    for c in get_cores():
+        if c["id"] == cor_id:
+            return c
+    return None
+
+
+def add_cor(data: dict) -> str:
+    db = _get_db()
+    new_id = "cor_" + str(uuid.uuid4())[:8]
+    data["id"] = new_id
+    db.setdefault("cores", []).append(data)
+    _save_db(db)
+    return new_id
+
+
+def update_cor(cor_id: str, data: dict) -> bool:
+    db = _get_db()
+    for i, c in enumerate(db.get("cores", [])):
+        if c["id"] == cor_id:
+            data["id"] = cor_id
+            db["cores"][i] = data
+            _save_db(db)
+            return True
+    return False
+
+
+def delete_cor(cor_id: str):
+    db = _get_db()
+    db["cores"] = [c for c in db.get("cores", []) if c["id"] != cor_id]
     _save_db(db)

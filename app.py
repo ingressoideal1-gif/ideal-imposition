@@ -208,6 +208,38 @@ def delete_saida(sai_id: str, user: dict = Depends(get_current_user)):
     db.delete_saida(sai_id)
     return {"status": "success"}
 
+# ─── CORES ────────────────────────────────────────────────────────────────────
+
+@app.get("/api/cores")
+def list_cores(user: dict = Depends(get_current_user)):
+    return db.get_cores()
+
+@app.get("/api/cores/{cor_id}")
+def get_cor(cor_id: str, user: dict = Depends(get_current_user)):
+    c = db.get_cor(cor_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Cor não encontrada")
+    return c
+
+@app.post("/api/cores")
+async def create_cor(request: Request, user: dict = Depends(get_current_user)):
+    data = await request.json()
+    new_id = db.add_cor(data)
+    return {"id": new_id, "status": "success"}
+
+@app.put("/api/cores/{cor_id}")
+async def update_cor(cor_id: str, request: Request, user: dict = Depends(get_current_user)):
+    data = await request.json()
+    ok = db.update_cor(cor_id, data)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Cor não encontrada")
+    return {"status": "success"}
+
+@app.delete("/api/cores/{cor_id}")
+def delete_cor(cor_id: str, user: dict = Depends(get_current_user)):
+    db.delete_cor(cor_id)
+    return {"status": "success"}
+
 # ─── IMPOSIÇÃO ────────────────────────────────────────────────────────────────
 
 @app.post("/api/impose")
