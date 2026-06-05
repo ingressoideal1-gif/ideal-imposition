@@ -69,5 +69,8 @@ service cloud.firestore {
     match /saidas/{document} {
       allow read, write: if true;
     }
+    match /cores/{document} {
+      allow read, write: if true;
+    }
   }
 }
