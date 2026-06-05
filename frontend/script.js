@@ -967,13 +967,25 @@ function drawCanvas() {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, W, H);
 
-    // Arte de fundo (camada de referência semitransparente)
+    // Arte de fundo (camada de referência semitransparente em tamanho original e centralizada)
     if (state.bgImage) {
-        const imgW = state.bgImage.width;
-        const imgH = state.bgImage.height;
-        const scale = Math.min(W / imgW, H / imgH);
-        const drawW = imgW * scale;
-        const drawH = imgH * scale;
+        const MM2PT = 2.8346;
+        let originalW_mm = 0;
+        let originalH_mm = 0;
+
+        if (state.bgImage.originalPdfWidthPt) {
+            // Se for PDF, usar os pontos originais dividindo por MM2PT (72 / 25.4)
+            originalW_mm = state.bgImage.originalPdfWidthPt / MM2PT;
+            originalH_mm = state.bgImage.originalPdfHeightPt / MM2PT;
+        } else {
+            // Imagem padrão: assumir 72 DPI (caso padrão web ou sem info)
+            // pixels / 72 * 25.4 mm (72 DPI = 2.8346 px por mm)
+            originalW_mm = state.bgImage.width / MM2PT;
+            originalH_mm = state.bgImage.height / MM2PT;
+        }
+
+        const drawW = originalW_mm * S;
+        const drawH = originalH_mm * S;
         const drawX = (W - drawW) / 2;
         const drawY = (H - drawH) / 2;
 
@@ -1470,19 +1482,22 @@ async function loadBgImage(file) {
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
             const page = await pdf.getPage(1);
-            const vp = page.getViewport({ scale: 1 });
-            const cW = Math.round(state.numFormato.width_mm * state.canvasScale);
-            const cH = Math.round(state.numFormato.height_mm * state.canvasScale);
-            const scale = Math.min(cW / vp.width, cH / vp.height);
-            const sv = page.getViewport({ scale });
+            
+            // Renderizar em alta qualidade (escala 2) sem redimensionar ao tamanho do formato aqui
+            const vp = page.getViewport({ scale: 2 });
             const off = document.createElement('canvas');
             const octx = off.getContext('2d');
-            off.width = Math.round(sv.width);
-            off.height = Math.round(sv.height);
+            off.width = Math.round(vp.width);
+            off.height = Math.round(vp.height);
             octx.fillStyle = '#ffffff';
             octx.fillRect(0, 0, off.width, off.height);
-            await page.render({ canvasContext: octx, viewport: sv }).promise;
+            await page.render({ canvasContext: octx, viewport: vp }).promise;
             img.src = off.toDataURL('image/png');
+            
+            // Guardar dimensões originais do PDF (em pontos / scale=1) para que drawCanvas possa escalar corretamente
+            const vpOrig = page.getViewport({ scale: 1 });
+            img.originalPdfWidthPt = vpOrig.width;
+            img.originalPdfHeightPt = vpOrig.height;
         } else {
             img.src = URL.createObjectURL(file);
         }
