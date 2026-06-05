@@ -27,6 +27,8 @@ const state = {
     numeracoes: [],
     saidas: [],
     cores: [],
+    fmtRotations: {}, // mapeia índice de célula -> ângulo (0, 90, 180, 270)
+    fmtSelectedCellIndex: null, // índice da célula selecionada no preview
 
     // Editor de Numeração
     numFormato: null,       // formato selecionado no editor
@@ -219,6 +221,7 @@ async function saveFmt() {
         gap_v_mm: parseFloat(document.getElementById('fmt-gapv').value),
         offset_h_mm: offH,
         offset_v_mm: offV,
+        rotations: state.fmtRotations,
     };
     if (!data.name) return toast('Informe um nome para o formato.', 'error');
     try {
@@ -259,6 +262,9 @@ function editFmt(id) {
     document.getElementById('fmt-gapv').value = f.gap_v_mm;
     document.getElementById('fmt-offh').value = (f.offset_h_mm || 0).toString().replace('.', ',');
     document.getElementById('fmt-offv').value = (f.offset_v_mm || 0).toString().replace('.', ',');
+    state.fmtRotations = f.rotations || {};
+    state.fmtSelectedCellIndex = null;
+    updateRotationButtons();
     document.getElementById('fmt-form-title').textContent = 'Editar Formato';
     document.getElementById('btn-fmt-cancel').style.display = 'inline-flex';
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -281,6 +287,12 @@ function cancelFmtEdit() {
     document.getElementById('fmt-offv').classList.remove('invalid');
     document.getElementById('fmt-form-title').textContent = 'Novo Formato';
     document.getElementById('btn-fmt-cancel').style.display = 'none';
+    
+    // Limpar estados de rotação
+    state.fmtRotations = {};
+    state.fmtSelectedCellIndex = null;
+    updateRotationButtons();
+
     drawFormatPreview();
 }
 
@@ -2561,10 +2573,13 @@ function drawFormatPreview() {
             const item_w = width_mm * scale;
             const item_h = height_mm * scale;
 
+            const cellIdx = r * cols + c;
+            const isSelected = (state.fmtSelectedCellIndex === cellIdx);
+
             // Retângulo do item (célula)
-            ctx.fillStyle = 'rgba(59, 130, 246, 0.08)';
-            ctx.strokeStyle = '#3b82f6';
-            ctx.lineWidth = 1.5;
+            ctx.fillStyle = isSelected ? 'rgba(59, 130, 246, 0.16)' : 'rgba(59, 130, 246, 0.08)';
+            ctx.strokeStyle = isSelected ? '#ef4444' : '#3b82f6';
+            ctx.lineWidth = isSelected ? 3 : 1.5;
             ctx.fillRect(item_x, item_y, item_w, item_h);
             ctx.strokeRect(item_x, item_y, item_w, item_h);
 
@@ -2604,13 +2619,28 @@ function drawFormatPreview() {
                 ctx.stroke();
             }
 
-            // Conteúdo fictício simples (ex: "#1", "#2", ...)
-            ctx.fillStyle = '#475569';
+            // Conteúdo fictício simples (ex: "#1", "#2", ...) com rotação individual
+            const rotationDeg = state.fmtRotations[cellIdx] || 0;
+            ctx.save();
+            ctx.translate(item_x + item_w / 2, item_y + item_h / 2);
+            ctx.rotate((rotationDeg * Math.PI) / 180);
+
+            // Desenhar pequena seta indicando o topo da página se houver rotação (ou sempre para ajudar visualmente)
+            ctx.strokeStyle = '#94a3b8';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(-6, -item_h * 0.35);
+            ctx.lineTo(0, -item_h * 0.42);
+            ctx.lineTo(6, -item_h * 0.35);
+            ctx.stroke();
+
+            ctx.fillStyle = rotationDeg !== 0 ? '#ef4444' : '#475569';
             ctx.font = `bold ${Math.max(8, Math.min(12, item_h * 0.25))}px Inter, sans-serif`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            const num = r * cols + c + 1;
-            ctx.fillText(`#${num}`, item_x + item_w / 2, item_y + item_h / 2);
+            const num = cellIdx + 1;
+            ctx.fillText(`#${num} (${rotationDeg}°)`, 0, 0);
+            ctx.restore();
         }
     }
 
@@ -2672,9 +2702,123 @@ function drawFormatPreview() {
 ['fmt-w', 'fmt-h', 'fmt-cols', 'fmt-rows', 'fmt-gaph', 'fmt-gapv', 'fmt-offh', 'fmt-offv'].forEach(id => {
     const el = document.getElementById(id);
     if (el) {
-        el.addEventListener('input', drawFormatPreview);
+        el.addEventListener('input', () => {
+            // Se mudar a quantidade de linhas ou colunas, reseta as rotações que ficarem órfãs
+            const cols = Math.max(1, parseInt(document.getElementById('fmt-cols').value) || 0);
+            const rows = Math.max(1, parseInt(document.getElementById('fmt-rows').value) || 0);
+            const maxIdx = cols * rows;
+            for (let key in state.fmtRotations) {
+                if (parseInt(key) >= maxIdx) {
+                    delete state.fmtRotations[key];
+                }
+            }
+            if (state.fmtSelectedCellIndex !== null && state.fmtSelectedCellIndex >= maxIdx) {
+                state.fmtSelectedCellIndex = null;
+                updateRotationButtons();
+            }
+            drawFormatPreview();
+        });
     }
 });
+
+// Funções para controle de rotação individual de páginas/células do formato
+function updateRotationButtons() {
+    const label = document.getElementById('rotation-selected-label');
+    const buttons = [0, 90, 180, 270].map(angle => document.getElementById(`btn-rot-${angle}`));
+
+    if (state.fmtSelectedCellIndex === null) {
+        if (label) label.textContent = 'Nenhuma célula selecionada (clique em uma página acima)';
+        buttons.forEach(btn => { if (btn) btn.disabled = true; });
+    } else {
+        const pageNum = state.fmtSelectedCellIndex + 1;
+        const currentRot = state.fmtRotations[state.fmtSelectedCellIndex] || 0;
+        if (label) label.textContent = `Página #${pageNum} selecionada (Rotação atual: ${currentRot}°)`;
+        
+        buttons.forEach(btn => {
+            if (btn) {
+                btn.disabled = false;
+                // Destacar botão da rotação ativa
+                const angle = parseInt(btn.id.replace('btn-rot-', ''));
+                if (angle === currentRot) {
+                    btn.classList.add('btn-primary');
+                    btn.classList.remove('btn-secondary');
+                } else {
+                    btn.classList.add('btn-secondary');
+                    btn.classList.remove('btn-primary');
+                }
+            }
+        });
+    }
+}
+window.updateRotationButtons = updateRotationButtons;
+
+function setCellRotation(angle) {
+    if (state.fmtSelectedCellIndex === null) return;
+    if (angle === 0) {
+        // 0° é o padrão, removemos a chave para limpar o dicionário
+        delete state.fmtRotations[state.fmtSelectedCellIndex];
+    } else {
+        state.fmtRotations[state.fmtSelectedCellIndex] = angle;
+    }
+    updateRotationButtons();
+    drawFormatPreview();
+}
+window.setCellRotation = setCellRotation;
+
+// Registrar clique no canvas do formato para selecionar a célula
+const fmtCanvas = document.getElementById('fmt-preview-canvas');
+if (fmtCanvas) {
+    fmtCanvas.addEventListener('click', function(e) {
+        const rect = fmtCanvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        const width_mm = Math.max(1, parseFloat(document.getElementById('fmt-w').value) || 0);
+        const height_mm = Math.max(1, parseFloat(document.getElementById('fmt-h').value) || 0);
+        const cols = Math.max(1, parseInt(document.getElementById('fmt-cols').value) || 0);
+        const rows = Math.max(1, parseInt(document.getElementById('fmt-rows').value) || 0);
+        const gap_h = Math.max(0, parseFloat(document.getElementById('fmt-gaph').value) || 0);
+        const gap_v = Math.max(0, parseFloat(document.getElementById('fmt-gapv').value) || 0);
+
+        const total_w_mm = (cols * width_mm) + ((cols - 1) * gap_h);
+        const total_h_mm = (rows * height_mm) + ((rows - 1) * gap_v);
+
+        const max_w = 400;
+        const max_h = 280;
+        const padding = 20;
+        const scale = Math.min((max_w - padding * 2) / total_w_mm, (max_h - padding * 2) / total_h_mm);
+
+        const offset_x = (max_w - (total_w_mm * scale)) / 2;
+        const offset_y = (max_h - (total_h_mm * scale)) / 2;
+
+        // Verificar em qual célula o clique caiu
+        let clickedIndex = null;
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                const item_x = offset_x + c * (width_mm + gap_h) * scale;
+                const item_y = offset_y + r * (height_mm + gap_v) * scale;
+                const item_w = width_mm * scale;
+                const item_h = height_mm * scale;
+
+                if (mouseX >= item_x && mouseX <= item_x + item_w &&
+                    mouseY >= item_y && mouseY <= item_y + item_h) {
+                    clickedIndex = r * cols + c;
+                    break;
+                }
+            }
+            if (clickedIndex !== null) break;
+        }
+
+        if (clickedIndex !== null) {
+            state.fmtSelectedCellIndex = clickedIndex;
+        } else {
+            state.fmtSelectedCellIndex = null;
+        }
+
+        updateRotationButtons();
+        drawFormatPreview();
+    });
+}
 
 // Render initial preview
 drawFormatPreview();
