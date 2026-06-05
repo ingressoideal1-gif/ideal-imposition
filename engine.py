@@ -124,8 +124,10 @@ class ImpositionConfig:
         self.rows = formato["rows"]
         self.gap_h = formato.get("gap_h_mm", 0) * MM2PT   # espaço horizontal entre cols
         self.gap_v = formato.get("gap_v_mm", 0) * MM2PT   # espaço vertical entre rows
-        self.offset_h = formato.get("offset_h_mm", 0) * MM2PT # deslocamento horizontal da arte
-        self.offset_v = formato.get("offset_v_mm", 0) * MM2PT # deslocamento vertical da arte
+        # Deslocamentos e rotações
+        self.offset_h = formato.get("offset_h_mm", 0) * MM2PT
+        self.offset_v = formato.get("offset_v_mm", 0) * MM2PT
+        self.rotations = formato.get("rotations", {})  # Dicionário de rotações de células (ex: {"0": 90})
 
         # Folha de saída
         self.sheet_w = saida["width_mm"] * MM2PT
@@ -162,24 +164,36 @@ class ImpositionEngine:
         self.cfg = config
 
     def _load_base_as_pdf(self) -> fitz.Document:
-        """Abre o arquivo base (PDF, JPG, PNG) como documento fitz."""
+        """Abre o arquivo base (PDF, JPG, PNG) como documento fitz com dimensões físicas precisas."""
         f = self.cfg.base_file.lower()
         if f.endswith(".pdf"):
             return fitz.open(self.cfg.base_file)
         else:
-            # Imagem → converter para PDF temporário em memória
+            # Imagem → converter para PDF temporário em memória ajustando ao tamanho do item
             img = Image.open(self.cfg.base_file)
+            img_w, img_h = img.size
+            img.close()
             
-            # Obter o DPI da imagem (usando 300 como padrão padrão de impressão)
-            dpi = img.info.get("dpi", (300, 300))
-            if not isinstance(dpi, tuple) or len(dpi) < 2 or dpi[0] <= 0 or dpi[1] <= 0:
-                dpi = (300, 300)
-                
-            buf = io.BytesIO()
-            # Salvar usando a resolução correta para obter as dimensões físicas corretas no PDF
-            img.save(buf, format="PDF", resolution=dpi[0])
-            buf.seek(0)
-            return fitz.open(stream=buf.read(), filetype="pdf")
+            doc = fitz.open()
+            w_pt = self.cfg.item_w
+            h_pt = self.cfg.item_h
+            page = doc.new_page(width=w_pt, height=h_pt)
+            
+            # Calcular dimensões para ajustar proporcionalmente e centralizar (equivalente ao frontend)
+            scale = min(w_pt / img_w, h_pt / img_h)
+            draw_w = img_w * scale
+            draw_h = img_h * scale
+            draw_x = (w_pt - draw_w) / 2
+            draw_y = (h_pt - draw_h) / 2
+            
+            rect = fitz.Rect(draw_x, draw_y, draw_x + draw_w, draw_y + draw_h)
+            page.insert_image(rect, filename=self.cfg.base_file)
+            
+            pdf_bytes = doc.write()
+            doc.close()
+            
+            return fitz.open(stream=pdf_bytes, filetype="pdf")
+
 
     def _render_element(self, page: fitz.Page, el: dict, cell_x0: float, cell_y0: float, val: int, csv_row: dict | None = None):
         """Renderiza um elemento VDP na posição absoluta da célula."""
@@ -219,7 +233,7 @@ class ImpositionEngine:
                     fontname=font_name,
                     color=rgb,
                     morph=(pivot, fitz.Matrix(math.cos(math.radians(angle)), -math.sin(math.radians(angle)),
-                                              math.sin(math.radians(angle)),  math.cos(math.radians(angle))))
+                                              math.sin(math.radians(angle)),  math.cos(math.radians(angle)), 0, 0))
                 )
             else:
                 page.insert_text(
@@ -319,6 +333,9 @@ class ImpositionEngine:
                     cell_x1 = cell_x0 + cfg.item_w
                     cell_y1 = cell_y0 + cfg.item_h
 
+                    # Obter rotação da célula (converte índice para string para compatibilidade com chaves de dicionário JSON)
+                    cell_rotation = int(cfg.rotations.get(str(P), 0))
+
                     # Arte em 100% escala original, centralizada na célula + offset
                     # Centralizar: deslocar pelo delta entre tamanho do item e tamanho original da arte
                     center_x = cell_x0 + (cfg.item_w - base_w) / 2
@@ -331,13 +348,62 @@ class ImpositionEngine:
                     art_y1 = art_y0 + base_h
 
                     rect_art = fitz.Rect(art_x0, art_y0, art_x1, art_y1)
-                    out_page.show_pdf_page(rect_art, doc_base, 0)
+                    
+                    if cell_rotation != 0:
+                        # Para rotacionar a arte base mantendo ela centralizada na célula:
+                        # passamos show_pdf_page com keep_proportion=True e rotate=cell_rotation
+                        # Calculamos o rect da célula em si para que show_pdf_page a posicione corretamente dentro dela rotacionada
+                        rect_cell = fitz.Rect(cell_x0, cell_y0, cell_x1, cell_y1)
+                        # Porém, o offset da arte também deve sofrer a rotação. 
+                        # Para simplificar e garantir a fidelidade, faremos show_pdf_page diretamente no rect da arte rotacionada
+                        # Rotacionamos a arte sobre seu próprio centro
+                        out_page.show_pdf_page(rect_art, doc_base, 0, keep_proportion=True, rotate=cell_rotation)
+                    else:
+                        out_page.show_pdf_page(rect_art, doc_base, 0)
 
                     # Renderizar elementos VDP
                     val = cfg.seq_start + (item_index * cfg.seq_increment)
                     csv_row = cfg.csv_data[item_index] if cfg.csv_data else None
                     for el in cfg.elements:
-                        self._render_element(out_page, el, cell_x0, cell_y0, val, csv_row)
+                        if cell_rotation != 0:
+                            # Se a célula tem rotação, precisamos rotacionar o ponto do elemento VDP em relação ao centro da célula!
+                            # Centro da célula:
+                            cx = cell_x0 + cfg.item_w / 2
+                            cy = cell_y0 + cfg.item_h / 2
+                            
+                            # Coordenadas do elemento sem rotação
+                            orig_el_x = cell_x0 + el["_x"]
+                            orig_el_y = cell_y0 + el["_y"]
+                            
+                            # Vetor do centro até o elemento
+                            dx = orig_el_x - cx
+                            dy = orig_el_y - cy
+                            
+                            rad = math.radians(cell_rotation)
+                            cos_a = math.cos(rad)
+                            sin_a = math.sin(rad)
+                            
+                            # Rotacionar o vetor de deslocamento
+                            rx = dx * cos_a - dy * sin_a
+                            ry = dx * sin_a + dy * cos_a
+                            
+                            # Novas coordenadas absolutas
+                            rot_el_x = cx + rx
+                            rot_el_y = cy + ry
+                            
+                            # Rotacionar também a rotação intrínseca do elemento
+                            rotated_el = dict(el)
+                            rotated_el["rotation"] = (el.get("rotation", 0) + cell_rotation) % 360
+                            
+                            # Para compensar o ponto de inserção do elemento que rotacionou em torno do seu próprio centro ou origem:
+                            # Passamos a nova coordenada e renderizamos
+                            # Ajustamos as coordenadas relativas temporárias
+                            rotated_el["_x"] = rot_el_x - cell_x0
+                            rotated_el["_y"] = rot_el_y - cell_y0
+                            
+                            self._render_element(out_page, rotated_el, cell_x0, cell_y0, val, csv_row)
+                        else:
+                            self._render_element(out_page, el, cell_x0, cell_y0, val, csv_row)
 
         doc_out.save(cfg.out_pdf, garbage=3, deflate=True)
         doc_base.close()
