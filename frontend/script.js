@@ -3530,14 +3530,14 @@ function renderAmostraCombinada() {
             // Criar cópia para ler os valores originais
             const copy = new Uint8ClampedArray(data);
             
-            // Matriz de convolução Sharpen (Nitidez clássica)
-            //  0  -1   0
-            // -1   5  -1
-            //  0  -1   0
+            // Matriz de convolução Sharpen (Nitidez agressiva)
+            //  -1  -1  -1
+            //  -1   9  -1
+            //  -1  -1  -1
             const weights = [
-                 0, -1.2,  0,
-              -1.2,  5.8, -1.2,
-                 0, -1.2,  0
+                -1.5, -1.5, -1.5,
+                -1.5,  13.0, -1.5,
+                -1.5, -1.5, -1.5
             ];
             
             const side = Math.round(Math.sqrt(weights.length));
