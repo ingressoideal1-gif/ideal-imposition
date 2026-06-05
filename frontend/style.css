@@ -881,4 +881,113 @@ input[type="color"].form-control {
     }
 }
 
+/* ─── ESTILOS DE AUTENTICAÇÃO ───────────────────────────────────────────────── */
+.auth-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 15, 30, 0.88);
+    backdrop-filter: blur(20px);
+    z-index: 3000;
+    display: none;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+}
+.auth-overlay.active {
+    display: flex;
+}
+.auth-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 36px;
+    width: 100%;
+    max-width: 420px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(16px);
+}
+.auth-header {
+    text-align: center;
+    margin-bottom: 28px;
+}
+.auth-header h2 {
+    font-size: 1.6rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 6px;
+}
+.auth-header p {
+    font-size: 0.88rem;
+    color: var(--text-dim);
+}
+.auth-actions {
+    margin-top: 24px;
+}
+.auth-divider {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    margin: 16px 0;
+    color: var(--text-dim);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.auth-divider::before,
+.auth-divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid var(--border);
+}
+.auth-divider:not(:empty)::before {
+    margin-right: .75em;
+}
+.auth-divider:not(:empty)::after {
+    margin-left: .75em;
+}
+.btn-google {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #ffffff;
+    color: #1f2937 !important;
+    border: 1px solid #e5e7eb;
+    font-weight: 600;
+    font-size: 0.88rem;
+    height: 40px;
+    cursor: pointer;
+    transition: background-color var(--transition), border-color var(--transition);
+}
+.btn-google:hover {
+    background: #f9fafb;
+    border-color: #d1d5db;
+}
+.google-icon {
+    flex-shrink: 0;
+}
+.auth-toggle {
+    text-align: center;
+    margin-top: 16px;
+    font-size: 0.85rem;
+}
+.auth-toggle a {
+    color: var(--blue);
+    text-decoration: none;
+    font-weight: 600;
+    transition: color var(--transition);
+}
+.auth-toggle a:hover {
+    color: #60a5fa;
+}
+
+/* Ocultação condicional do painel lateral até login */
+body.not-logged-in .app-shell {
+    filter: blur(10px);
+    pointer-events: none;
+}
+
+
 

@@ -117,6 +117,17 @@ async function api(method, path, body = null) {
     const baseUrl = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : '';
     const opts = { method, headers: {} };
     if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+    
+    // Obter o token JWT do Firebase Auth ativo se disponível
+    if (typeof firebase !== 'undefined' && firebase.auth() && firebase.auth().currentUser) {
+        try {
+            const token = await firebase.auth().currentUser.getIdToken();
+            opts.headers['Authorization'] = `Bearer ${token}`;
+        } catch (e) {
+            console.error("Erro ao obter Firebase ID Token:", e);
+        }
+    }
+
     const res = await fetch(`${baseUrl}/api${path}`, opts);
     if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: 'Erro desconhecido' }));
@@ -124,6 +135,7 @@ async function api(method, path, body = null) {
     }
     return res.json().catch(() => ({}));
 }
+
 
 // ─── Load All Data ────────────────────────────────────────────────────────────
 async function loadAll() {
@@ -749,7 +761,9 @@ function drawElement(ctx, el, S) {
         } else if (el.source === 'database') {
             label = `${el.prefix || ''}[${el.csv_column || 'coluna'}]${el.suffix || ''}`;
         } else {
-            label = `${el.prefix || ''}0001${el.suffix || ''}`;
+            const padValue = typeof el.pad !== 'undefined' ? el.pad : 6;
+            const dummyNum = String(1).padStart(padValue, '0');
+            label = `${el.prefix || ''}${dummyNum}${el.suffix || ''}`;
         }
         ctx.fillText(label, 0, fs);
 
@@ -1574,6 +1588,58 @@ window.saveNumeracao = async function () {
 };
 
 // ─── IMPOSIÇÃO ────────────────────────────────────────────────────────────────
+// Detecta o DPI real de um arquivo de imagem (JPEG ou PNG) a partir dos seus metadados binários
+async function getDpi(file) {
+    try {
+        const buffer = await file.arrayBuffer();
+        const view = new DataView(buffer);
+        
+        // Verifica se é JPEG (começa com FF D8)
+        if (view.byteLength > 4 && view.getUint16(0) === 0xFFD8) {
+            let offset = 2;
+            while (offset < view.byteLength - 4) {
+                const marker = view.getUint16(offset);
+                if (marker === 0xFFE0) { // APP0 (JFIF)
+                    const units = view.getUint8(offset + 11);
+                    const xDensity = view.getUint16(offset + 12);
+                    if (units === 1 && xDensity > 0) { // 1 = dots per inch (DPI)
+                        return xDensity;
+                    }
+                    if (units === 2 && xDensity > 0) { // 2 = dots per cm
+                        return Math.round(xDensity * 2.54);
+                    }
+                    break;
+                }
+                // Pular o segmento
+                const len = view.getUint16(offset + 2);
+                offset += 2 + len;
+            }
+        }
+        
+        // Verifica se é PNG (começa com 89 50 4E 47)
+        if (view.byteLength > 8 && view.getUint32(0) === 0x89504E47) {
+            let offset = 8;
+            while (offset < view.byteLength - 12) {
+                const length = view.getUint32(offset);
+                const type = view.getUint32(offset + 4);
+                if (type === 0x70485973) { // pHYs chunk (physical pixel dimensions)
+                    const xPixelsPerMeter = view.getUint32(offset + 8);
+                    const unitSpecifier = view.getUint8(offset + 16);
+                    if (unitSpecifier === 1 && xPixelsPerMeter > 0) {
+                        return Math.round(xPixelsPerMeter * 0.0254); // Converter pixels por metro para DPI
+                    }
+                    break;
+                }
+                offset += 12 + length;
+            }
+        }
+    } catch (e) {
+        console.warn("Erro ao ler metadados de DPI:", e);
+    }
+    return 300; // Padrão de 300 DPI para artes gráficas profissionais
+}
+
+// ─── IMPOSIÇÃO ────────────────────────────────────────────────────────────────
 async function loadImpArtFile(file) {
     const ext = file.name.split('.').pop().toLowerCase();
     try {
@@ -1604,9 +1670,14 @@ async function loadImpArtFile(file) {
             const img = new Image();
             img.src = URL.createObjectURL(file);
             await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+            
+            // Obter o DPI da imagem a partir dos metadados
+            const dpi = await getDpi(file);
+            
             state.impArtImage = img;
-            state.impArtWidth = img.width;
-            state.impArtHeight = img.height;
+            // Converter pixels para pontos PDF (1pt = 1/72 polegada, logo: px / DPI * 72)
+            state.impArtWidth = img.width * (72 / dpi);
+            state.impArtHeight = img.height * (72 / dpi);
         }
         toast('Arte carregada para preview!', 'success');
         drawPreview();
@@ -1998,7 +2069,22 @@ window.runImposition = async function () {
 
     try {
         const baseUrl = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : '';
-        const res = await fetch(`${baseUrl}/api/impose`, { method: 'POST', body: formData });
+        
+        const headers = {};
+        if (typeof firebase !== 'undefined' && firebase.auth() && firebase.auth().currentUser) {
+            try {
+                const token = await firebase.auth().currentUser.getIdToken();
+                headers['Authorization'] = `Bearer ${token}`;
+            } catch (e) {
+                console.error("Erro ao obter Firebase ID Token para imposição:", e);
+            }
+        }
+
+        const res = await fetch(`${baseUrl}/api/impose`, { 
+            method: 'POST', 
+            headers: headers,
+            body: formData 
+        });
         if (!res.ok) {
             const err = await res.json();
             throw new Error(err.detail || 'Erro no servidor');
@@ -2443,3 +2529,186 @@ window.addCsvColumnElement = function(colName) {
     drawCanvas();
     selectElementCard(id);
 };
+
+// ─── LÓGICA DE AUTENTICAÇÃO E ADMINISTRAÇÃO ───────────────────────────────────
+let authMode = 'login'; // 'login' ou 'register'
+
+window.toggleAuthMode = function(e) {
+    if (e) e.preventDefault();
+    const title = document.querySelector('.auth-header h2');
+    const p = document.querySelector('.auth-header p');
+    const btnSubmit = document.getElementById('btn-auth-submit');
+    const toggleLink = document.getElementById('auth-toggle-link');
+    
+    if (authMode === 'login') {
+        authMode = 'register';
+        title.textContent = 'Ideal Imposition — Cadastro';
+        p.textContent = 'Crie sua conta para começar';
+        btnSubmit.textContent = 'Cadastrar';
+        toggleLink.textContent = 'Já tem uma conta? Entrar';
+    } else {
+        authMode = 'login';
+        title.textContent = 'Ideal Imposition';
+        p.textContent = 'Faça login para acessar o painel online';
+        btnSubmit.textContent = 'Entrar';
+        toggleLink.textContent = 'Criar uma nova conta';
+    }
+};
+
+window.handleAuthSubmit = async function(e) {
+    e.preventDefault();
+    const email = document.getElementById('auth-email').value.trim();
+    const password = document.getElementById('auth-password').value;
+    const btnSubmit = document.getElementById('btn-auth-submit');
+    
+    btnSubmit.disabled = true;
+    btnSubmit.textContent = authMode === 'login' ? 'Entrando...' : 'Cadastrando...';
+    
+    try {
+        if (authMode === 'login') {
+            await firebase.auth().signInWithEmailAndPassword(email, password);
+            toast('Login efetuado com sucesso!', 'success');
+        } else {
+            await firebase.auth().createUserWithEmailAndPassword(email, password);
+            toast('Conta criada com sucesso!', 'success');
+        }
+        document.getElementById('auth-overlay').classList.remove('active');
+        document.body.classList.remove('not-logged-in');
+    } catch (err) {
+        toast('Erro: ' + err.message, 'error');
+    } finally {
+        btnSubmit.disabled = false;
+        btnSubmit.textContent = authMode === 'login' ? 'Entrar' : 'Cadastrar';
+    }
+};
+
+window.handleGoogleLogin = async function() {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    const btnGoogle = document.getElementById('btn-google-login');
+    if (btnGoogle) btnGoogle.disabled = true;
+    
+    try {
+        await firebase.auth().signInWithPopup(provider);
+        toast('Login com Google efetuado com sucesso!', 'success');
+        document.getElementById('auth-overlay').classList.remove('active');
+        document.body.classList.remove('not-logged-in');
+    } catch (err) {
+        toast('Erro ao entrar com Google: ' + err.message, 'error');
+    } finally {
+        if (btnGoogle) btnGoogle.disabled = false;
+    }
+};
+
+window.handleSignOut = async function() {
+    try {
+        await firebase.auth().signOut();
+        toast('Logoff efetuado!', 'success');
+        location.reload();
+    } catch (e) {
+        toast('Erro ao sair: ' + e.message, 'error');
+    }
+};
+
+// Monitora o estado de autenticação do Firebase Auth
+document.addEventListener('DOMContentLoaded', () => {
+    if (typeof firebase !== 'undefined' && firebase.auth) {
+        firebase.auth().onAuthStateChanged(async (user) => {
+            if (user) {
+                // Logado
+                document.getElementById('auth-overlay').classList.remove('active');
+                document.body.classList.remove('not-logged-in');
+                
+                // Mostrar informações do perfil
+                const profileBar = document.getElementById('user-profile-bar');
+                const emailDisplay = document.getElementById('user-email-display');
+                if (profileBar) profileBar.style.display = 'block';
+                if (emailDisplay) emailDisplay.textContent = user.email;
+
+                // Obter claims personalizadas (para saber se é admin)
+                try {
+                    const idTokenResult = await user.getIdTokenResult();
+                    const isAdmin = idTokenResult.claims.admin === true;
+                    if (isAdmin) {
+                        document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'block');
+                    } else {
+                        document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
+                    }
+                } catch (e) {
+                    console.error("Erro ao ler Claims:", e);
+                }
+
+                // Carregar dados principais
+                loadAll();
+            } else {
+                // Deslogado
+                document.getElementById('auth-overlay').classList.add('active');
+                document.body.classList.add('not-logged-in');
+                
+                const profileBar = document.getElementById('user-profile-bar');
+                if (profileBar) profileBar.style.display = 'none';
+                document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
+            }
+        });
+    }
+});
+
+// Lógica do Painel de Administração (Lista usuários e altera permissões)
+window.loadAdminUsers = async function() {
+    const tbody = document.getElementById('tbody-admin-users');
+    if (!tbody) return;
+    
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Carregando usuários...</td></tr>';
+    
+    try {
+        const users = await api('GET', '/admin/users');
+        if (!users || !users.length) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Nenhum usuário retornado.</td></tr>';
+            return;
+        }
+        
+        tbody.innerHTML = users.map(u => `
+            <tr>
+                <td>
+                    <strong>${u.display_name}</strong><br>
+                    <small style="color: var(--text-dim);">${u.email}</small>
+                </td>
+                <td><code style="font-size:0.75rem; background:rgba(0,0,0,0.2); padding: 2px 6px; border-radius:4px;">${u.uid}</code></td>
+                <td>
+                    <span class="badge ${u.role === 'admin' ? 'badge-red' : (u.role === 'editor' ? 'badge-blue' : 'badge-teal')}">${u.role.toUpperCase()}</span>
+                </td>
+                <td>
+                    <select class="form-control" style="width: auto; display: inline-block; padding: 4px 8px; font-size: 0.8rem; height: 30px;" onchange="changeUserRole('${u.uid}', this.value)">
+                        <option value="user" ${u.role === 'user' ? 'selected' : ''}>User (Visualizador)</option>
+                        <option value="editor" ${u.role === 'editor' ? 'selected' : ''}>Editor</option>
+                        <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
+                    </select>
+                </td>
+            </tr>
+        `).join('');
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color: var(--red);">Erro: ${e.message}</td></tr>`;
+        toast('Erro ao obter usuários: ' + e.message, 'error');
+    }
+};
+
+window.changeUserRole = async function(uid, newRole) {
+    if (!confirm(`Deseja alterar a função deste usuário para ${newRole.toUpperCase()}?`)) {
+        loadAdminUsers();
+        return;
+    }
+    
+    try {
+        await api('POST', `/admin/users/${uid}/role`, { role: newRole });
+        toast('Função de usuário atualizada!', 'success');
+        loadAdminUsers();
+    } catch (e) {
+        toast('Erro ao alterar função: ' + e.message, 'error');
+        loadAdminUsers();
+    }
+};
+
+// Vincula clique na aba de administração para carregar usuários automaticamente
+document.getElementById('nav-admin')?.addEventListener('click', () => {
+    loadAdminUsers();
+});
+

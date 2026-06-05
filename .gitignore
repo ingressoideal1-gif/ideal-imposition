@@ -8,3 +8,5 @@ firebase-debug.log
 ui-tests/
 *.log
 tmp*
+node_modules/
+

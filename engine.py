@@ -169,8 +169,17 @@ class ImpositionEngine:
         else:
             # Imagem → converter para PDF temporário em memória
             img = Image.open(self.cfg.base_file)
+            
+            # Obter o DPI da imagem (padrão 300 DPI para artes gráficas se não definido)
+            dpi = img.info.get('dpi')
+            if dpi and isinstance(dpi, tuple) and len(dpi) >= 2 and dpi[0] > 0:
+                dpi_val = float(dpi[0])
+            else:
+                dpi_val = 300.0
+                
             buf = io.BytesIO()
-            img.save(buf, format="PDF")
+            # Salvar a imagem especificando a resolução correspondente
+            img.save(buf, format="PDF", dpi=(dpi_val, dpi_val), resolution=dpi_val)
             buf.seek(0)
             return fitz.open(stream=buf.read(), filetype="pdf")
 

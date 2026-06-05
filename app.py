@@ -9,9 +9,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from engine import ImpositionConfig, ImpositionEngine
 import db
 import print_service
-import ppd_parser
+import firebase_admin
+from firebase_admin import auth, credentials
+
+# Inicializar o Firebase Admin
+try:
+    firebase_admin.initialize_app()
+    print("[Firebase Admin] Inicializado com sucesso")
+except Exception as e:
+    print(f"[Firebase Admin] Alerta na inicialização: {e}. Usando credenciais padrão se disponíveis.")
 
 app = FastAPI(title="Ideal Imposition API", description="Sistema de Imposição Gráfica com Dados Variáveis")
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -29,33 +38,102 @@ def root_redirect():
     """Redireciona a raiz para o frontend."""
     return RedirectResponse(url="/app/index.html")
 
+
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():
     """Retorna 204 para evitar erros de favicon no console."""
     from fastapi.responses import Response
     return Response(status_code=204)
 
+# ─── AUTENTICAÇÃO E CONTROLE DE PERMISSÕES ─────────────────────────────────────
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import Depends
+
+security_scheme = HTTPBearer()
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security_scheme)):
+    token = credentials.credentials
+    try:
+        # Verifica o token JWT enviado pelo Firebase no frontend
+        decoded_token = auth.verify_id_token(token)
+        return decoded_token
+    except Exception as e:
+        raise HTTPException(
+            status_code=401,
+            detail=f"Token inválido ou expirado: {str(e)}"
+        )
+
+async def check_admin(user: dict = Depends(get_current_user)):
+    if not user.get("admin", False):
+        raise HTTPException(
+            status_code=403,
+            detail="Acesso restrito a administradores."
+        )
+    return user
+
+# ─── ROTAS ADMINISTRATIVAS DE USUÁRIOS ──────────────────────────────────────────
+@app.get("/api/admin/users")
+async def admin_list_users(admin_user: dict = Depends(check_admin)):
+    """Lista todos os usuários registrados no Firebase Auth."""
+    try:
+        users = []
+        page = auth.list_users()
+        while page:
+            for user in page.users:
+                # Custom claims
+                custom_claims = user.custom_claims or {}
+                role = "admin" if custom_claims.get("admin") else ("editor" if custom_claims.get("editor") else "user")
+                users.append({
+                    "uid": user.uid,
+                    "email": user.email,
+                    "display_name": user.display_name or user.email.split('@')[0],
+                    "role": role,
+                    "disabled": user.disabled
+                })
+            page = page.get_next_page()
+        return users
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/admin/users/{uid}/role")
+async def admin_set_user_role(uid: str, payload: dict, admin_user: dict = Depends(check_admin)):
+    """Atualiza o papel (role) de um usuário específico."""
+    new_role = payload.get("role")
+    if new_role not in ["admin", "editor", "user"]:
+        raise HTTPException(status_code=400, detail="Papel inválido.")
+    try:
+        if new_role == "admin":
+            auth.set_custom_user_claims(uid, {"admin": True, "editor": True})
+        elif new_role == "editor":
+            auth.set_custom_user_claims(uid, {"admin": False, "editor": True})
+        else:
+            auth.set_custom_user_claims(uid, {"admin": False, "editor": False})
+        return {"status": "success", "message": f"Papel alterado para {new_role}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ─── FORMATOS ─────────────────────────────────────────────────────────────────
 
 @app.get("/api/formatos")
-def list_formatos():
+def list_formatos(user: dict = Depends(get_current_user)):
     return db.get_formatos()
 
 @app.get("/api/formatos/{fmt_id}")
-def get_formato(fmt_id: str):
+def get_formato(fmt_id: str, user: dict = Depends(get_current_user)):
     f = db.get_formato(fmt_id)
     if not f:
         raise HTTPException(status_code=404, detail="Formato não encontrado")
     return f
 
 @app.post("/api/formatos")
-async def create_formato(request: Request):
+async def create_formato(request: Request, user: dict = Depends(get_current_user)):
     data = await request.json()
     new_id = db.add_formato(data)
     return {"id": new_id, "status": "success"}
 
 @app.put("/api/formatos/{fmt_id}")
-async def update_formato(fmt_id: str, request: Request):
+async def update_formato(fmt_id: str, request: Request, user: dict = Depends(get_current_user)):
     data = await request.json()
     ok = db.update_formato(fmt_id, data)
     if not ok:
@@ -63,31 +141,31 @@ async def update_formato(fmt_id: str, request: Request):
     return {"status": "success"}
 
 @app.delete("/api/formatos/{fmt_id}")
-def delete_formato(fmt_id: str):
+def delete_formato(fmt_id: str, user: dict = Depends(get_current_user)):
     db.delete_formato(fmt_id)
     return {"status": "success"}
 
 # ─── NUMERAÇÕES ───────────────────────────────────────────────────────────────
 
 @app.get("/api/numeracoes")
-def list_numeracoes():
+def list_numeracoes(user: dict = Depends(get_current_user)):
     return db.get_numeracoes()
 
 @app.get("/api/numeracoes/{num_id}")
-def get_numeracao(num_id: str):
+def get_numeracao(num_id: str, user: dict = Depends(get_current_user)):
     n = db.get_numeracao(num_id)
     if not n:
         raise HTTPException(status_code=404, detail="Numeração não encontrada")
     return n
 
 @app.post("/api/numeracoes")
-async def create_numeracao(request: Request):
+async def create_numeracao(request: Request, user: dict = Depends(get_current_user)):
     data = await request.json()
     new_id = db.add_numeracao(data)
     return {"id": new_id, "status": "success"}
 
 @app.put("/api/numeracoes/{num_id}")
-async def update_numeracao(num_id: str, request: Request):
+async def update_numeracao(num_id: str, request: Request, user: dict = Depends(get_current_user)):
     data = await request.json()
     ok = db.update_numeracao(num_id, data)
     if not ok:
@@ -95,31 +173,31 @@ async def update_numeracao(num_id: str, request: Request):
     return {"status": "success"}
 
 @app.delete("/api/numeracoes/{num_id}")
-def delete_numeracao(num_id: str):
+def delete_numeracao(num_id: str, user: dict = Depends(get_current_user)):
     db.delete_numeracao(num_id)
     return {"status": "success"}
 
 # ─── SAÍDAS ───────────────────────────────────────────────────────────────────
 
 @app.get("/api/saidas")
-def list_saidas():
+def list_saidas(user: dict = Depends(get_current_user)):
     return db.get_saidas()
 
 @app.get("/api/saidas/{sai_id}")
-def get_saida(sai_id: str):
+def get_saida(sai_id: str, user: dict = Depends(get_current_user)):
     s = db.get_saida(sai_id)
     if not s:
         raise HTTPException(status_code=404, detail="Saída não encontrada")
     return s
 
 @app.post("/api/saidas")
-async def create_saida(request: Request):
+async def create_saida(request: Request, user: dict = Depends(get_current_user)):
     data = await request.json()
     new_id = db.add_saida(data)
     return {"id": new_id, "status": "success"}
 
 @app.put("/api/saidas/{sai_id}")
-async def update_saida(sai_id: str, request: Request):
+async def update_saida(sai_id: str, request: Request, user: dict = Depends(get_current_user)):
     data = await request.json()
     ok = db.update_saida(sai_id, data)
     if not ok:
@@ -127,7 +205,7 @@ async def update_saida(sai_id: str, request: Request):
     return {"status": "success"}
 
 @app.delete("/api/saidas/{sai_id}")
-def delete_saida(sai_id: str):
+def delete_saida(sai_id: str, user: dict = Depends(get_current_user)):
     db.delete_saida(sai_id)
     return {"status": "success"}
 
@@ -137,8 +215,10 @@ def delete_saida(sai_id: str):
 async def impose_file(
     file: UploadFile = File(...),
     csv_file: UploadFile | None = File(None),
-    payload: str = Form(...)
+    payload: str = Form(...),
+    user: dict = Depends(get_current_user)
 ):
+
     try:
         import csv
         import io
