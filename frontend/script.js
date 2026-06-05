@@ -853,6 +853,7 @@ function drawElement(ctx, el, S) {
         // Como o contexto foi transladado para (x, y), a coordenada local Y vai de -y até (h_px - y)
         ctx.moveTo(0, -y);
         ctx.lineTo(0, h_px - y);
+        ctx.stroke();
         ctx.setLineDash([]);
     } else if (el.type === 'SVG') {
         const w = (el.width_mm || 20) * S;
