@@ -2116,56 +2116,68 @@ function drawPreview() {
             const cell_x0 = start_x + col * (item_w + gap_h);
             const cell_y0 = start_y + row * (item_h + gap_v);
 
-            const cx0 = cell_x0 * scale;
-            const cy0 = cell_y0 * scale;
             const cw = item_w * scale;
             const ch = item_h * scale;
 
-            // Borda do item
+            // Centro da célula para rotação
+            const centerX = (cell_x0 + item_w / 2) * scale;
+            const centerY = (cell_y0 + item_h / 2) * scale;
+            const cellRotation = fmt.rotations ? (parseInt(fmt.rotations[P]) || 0) : 0;
+
+            ctx.save();
+            ctx.translate(centerX, centerY);
+            if (cellRotation !== 0) {
+                ctx.rotate((cellRotation * Math.PI) / 180);
+            }
+
+            // Borda do item (desenhada em torno do centro 0,0)
             ctx.strokeStyle = '#cbd5e1';
             ctx.lineWidth = 0.5;
-            ctx.strokeRect(cx0, cy0, cw, ch);
+            ctx.strokeRect(-cw / 2, -ch / 2, cw, ch);
 
             if (state.impArtImage) {
                 // Dimensões originais da arte
                 const art_orig_w = state.impArtWidth;
                 const art_orig_h = state.impArtHeight;
 
-                // Centralizar a arte na célula + aplicar offset do formato
+                // Centralizar a arte na célula + aplicar offset do formato (em relação ao centro da célula que é 0,0)
                 // (positivo H = direita, positivo V = para cima → negar Y)
-                let art_x0 = cell_x0 + (item_w - art_orig_w) / 2 + fmt_off_h;
-                let art_y0 = cell_y0 + (item_h - art_orig_h) / 2 - fmt_off_v;
-                let art_x1 = art_x0 + art_orig_w;
-                let art_y1 = art_y0 + art_orig_h;
+                const offH = fmt_off_h * scale;
+                const offV = -fmt_off_v * scale;
 
-                const dx = art_x0 * scale;
-                const dy = art_y0 * scale;
                 const dw = art_orig_w * scale;
                 const dh = art_orig_h * scale;
 
                 if (dw > 0 && dh > 0) {
-                    ctx.drawImage(state.impArtImage, 0, 0, state.impArtImage.width, state.impArtImage.height, dx, dy, dw, dh);
+                    ctx.drawImage(state.impArtImage, 0, 0, state.impArtImage.width, state.impArtImage.height, offH - dw / 2, offV - dh / 2, dw, dh);
                 }
             } else {
                 ctx.fillStyle = '#f8fafc';
-                ctx.fillRect(cx0, cy0, cw, ch);
+                ctx.fillRect(-cw / 2, -ch / 2, cw, ch);
                 ctx.strokeStyle = '#e2e8f0';
                 ctx.setLineDash([3, 3]);
-                ctx.strokeRect(cx0 + 2, cy0 + 2, cw - 4, ch - 4);
+                ctx.strokeRect(-cw / 2 + 2, -ch / 2 + 2, cw - 4, ch - 4);
                 ctx.setLineDash([]);
 
                 ctx.fillStyle = '#94a3b8';
                 ctx.font = `${Math.max(7, Math.round(ch * 0.12))}px Inter`;
                 ctx.textAlign = 'center';
-                ctx.fillText(`Posição ${P + 1}`, cx0 + cw / 2, cy0 + ch / 2);
+                ctx.textBaseline = 'middle';
+                ctx.fillText(`Posição ${P + 1}`, 0, 0);
             }
 
             // Elementos variáveis (VDP)
             if (num && num.elements) {
                 const val = start + item_index;
                 num.elements.forEach(el => {
-                    const el_x = cell_x0 + (el.x_mm * MM2PT);
-                    const el_y = cell_y0 + (el.y_mm * MM2PT);
+                    // Posição do elemento relativa ao canto superior esquerdo da célula
+                    const el_x = el.x_mm * MM2PT * scale;
+                    const el_y = el.y_mm * MM2PT * scale;
+                    
+                    // Converter para coordenadas relativas ao centro da célula (0,0)
+                    const el_x_rel = el_x - cw / 2;
+                    const el_y_rel = el_y - ch / 2;
+
                     const color = el.color || '#000000';
                     const rotation = el.rotation || 0;
 
@@ -2188,7 +2200,7 @@ function drawPreview() {
                     }
 
                     ctx.save();
-                    ctx.translate(el_x * scale, el_y * scale);
+                    ctx.translate(el_x_rel, el_y_rel);
                     ctx.rotate(rotation * Math.PI / 180);
 
                     if (el.type === 'TEXT' || el.type === 'FIXED') {
@@ -2251,6 +2263,8 @@ function drawPreview() {
                     ctx.restore();
                 });
             }
+
+            ctx.restore();
         }
     }
 
