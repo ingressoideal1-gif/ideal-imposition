@@ -3462,30 +3462,39 @@ function renderAmostraCombinada() {
         return;
     }
 
-    const fmt = getAmostraFormato();
-    if (!fmt) {
-        canvasComb.style.display = 'none';
-        if (emptyComb) emptyComb.style.display = 'block';
-        return;
-    }
+    // A amostra base de tamanho oficial do canvasComb é estritamente baseada no elemento Cor
+    // Se não houver cor cadastrada ou o canvas de cor não estiver pronto, usamos o getAmostraFormato como fallback
+    let canvasW = 300;
+    let canvasH = 200;
 
-    // A escala global unificada que mantém a paridade física 1:1 absoluta
-    const S = getAmostraScale(fmt, canvasComb);
-
-    // O canvas de Amostra Combinada deve possuir o tamanho físico estrito da Cor
     const cor = state.cores.find(c => c.id === corId);
-    let targetW = fmt.width_mm;
-    let targetH = fmt.height_mm;
-    if (cor) {
-        targetW = cor.width_mm;
-        targetH = cor.height_mm;
+    
+    if (corId && corCanvas && corCanvas.style.display !== 'none' && corCanvas.width > 0) {
+        canvasW = corCanvas.width;
+        canvasH = corCanvas.height;
+    } else if (cor) {
+        // Se a cor estiver selecionada mas o canvas ainda não estiver carregado, calculamos a escala
+        const S = getAmostraScale(cor, canvasComb);
+        canvasW = Math.round(cor.width_mm * S);
+        canvasH = Math.round(cor.height_mm * S);
+    } else {
+        const fmtFallback = getAmostraFormato();
+        if (fmtFallback) {
+            const S = getAmostraScale(fmtFallback, canvasComb);
+            canvasW = Math.round(fmtFallback.width_mm * S);
+            canvasH = Math.round(fmtFallback.height_mm * S);
+        } else {
+            canvasComb.style.display = 'none';
+            if (emptyComb) emptyComb.style.display = 'block';
+            return;
+        }
     }
 
     if (emptyComb) emptyComb.style.display = 'none';
     canvasComb.style.display = 'block';
 
-    canvasComb.width = Math.round(targetW * S);
-    canvasComb.height = Math.round(targetH * S);
+    canvasComb.width = canvasW;
+    canvasComb.height = canvasH;
 
     const ctx = canvasComb.getContext('2d');
     ctx.clearRect(0, 0, canvasComb.width, canvasComb.height);
@@ -3493,36 +3502,34 @@ function renderAmostraCombinada() {
     // Resetar composite operation
     ctx.globalCompositeOperation = 'source-over';
 
-    // 1. Desenhar a Camada 1: Cor (se estiver disponível, centralizada no canvasComb caso divirjam)
+    // 1. Desenhar a Camada 1: Cor (se estiver disponível)
     if (corId && corCanvas && corCanvas.style.display !== 'none' && corCanvas.width > 0) {
-        const dx = (canvasComb.width - corCanvas.width) / 2;
-        const dy = (canvasComb.height - corCanvas.height) / 2;
-        ctx.drawImage(corCanvas, dx, dy, corCanvas.width, corCanvas.height);
+        ctx.drawImage(corCanvas, 0, 0, canvasComb.width, canvasComb.height);
     } else {
         // Se não tiver cor selecionada, desenha uma base branca para podermos visualizar as outras camadas
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, canvasComb.width, canvasComb.height);
     }
 
-    // 2. Desenhar a Camada 2: Arte com efeito similar ao Photoshop Multiply (centralizada mantendo seu tamanho físico proporcional em escala S)
+    // 2. Desenhar a Camada 2: Arte com efeito similar ao Photoshop Multiply (centralizada mantendo o tamanho original do canvas da arte)
     if (hasArte && arteCanvas && arteCanvas.style.display !== 'none' && arteCanvas.width > 0) {
         ctx.save();
         ctx.globalCompositeOperation = 'multiply';
-        // Centralizar horizontal e verticalmente baseando-se no tamanho do canvas da arte
+        // Centralizar horizontal e verticalmente mantendo exatamente seu próprio tamanho original
         const dx = (canvasComb.width - arteCanvas.width) / 2;
         const dy = (canvasComb.height - arteCanvas.height) / 2;
-        ctx.drawImage(arteCanvas, dx, dy, arteCanvas.width, arteCanvas.height);
+        ctx.drawImage(arteCanvas, dx, dy);
         ctx.restore();
     }
 
-    // 3. Desenhar a Camada 3: Numeração com efeito similar ao Photoshop Multiply (centralizada mantendo seu tamanho físico proporcional em escala S)
+    // 3. Desenhar a Camada 3: Numeração com efeito similar ao Photoshop Multiply (centralizada mantendo o tamanho original do canvas da numeração)
     if (numId && numCanvas && numCanvas.style.display !== 'none' && numCanvas.width > 0) {
         ctx.save();
         ctx.globalCompositeOperation = 'multiply';
-        // Centralizar horizontal e verticalmente baseando-se no tamanho do canvas da numeração
+        // Centralizar horizontal e verticalmente mantendo exatamente seu próprio tamanho original
         const dx = (canvasComb.width - numCanvas.width) / 2;
         const dy = (canvasComb.height - numCanvas.height) / 2;
-        ctx.drawImage(numCanvas, dx, dy, numCanvas.width, numCanvas.height);
+        ctx.drawImage(numCanvas, dx, dy);
         ctx.restore();
     }
 
