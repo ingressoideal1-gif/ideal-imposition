@@ -3098,6 +3098,38 @@ let amostraArteImage = null;
 let amostraArteWidth = 0;
 let amostraArteHeight = 0;
 
+// Helper para obter dimensões do formato ativo em Amostras
+function getAmostraFormato() {
+    const corId = document.getElementById('amostra-cor').value;
+    const numId = document.getElementById('amostra-numeracao').value;
+    
+    if (numId) {
+        const num = state.numeracoes.find(n => n.id === numId);
+        if (num) {
+            const fmt = state.formatos.find(f => f.id === num.formato_id);
+            if (fmt) return fmt;
+        }
+    }
+    if (corId) {
+        const cor = state.cores.find(c => c.id === corId);
+        if (cor) {
+            // Retorna dimensões do formato correspondentes à cor
+            return {
+                width_mm: cor.width_mm,
+                height_mm: cor.height_mm
+            };
+        }
+    }
+    return null;
+}
+
+// Helper para calcular a escala (px/mm) ideal para que todos os canvas tenham o mesmo tamanho
+function getAmostraScale(fmt, canvasElement) {
+    if (!fmt || !canvasElement) return 3.5; // Escala padrão
+    const containerW = canvasElement.parentElement.clientWidth - 30; // compensar padding
+    return containerW / fmt.width_mm;
+}
+
 window.onAmostraCorSelect = async function() {
     const corId = document.getElementById('amostra-cor').value;
     const canvas = document.getElementById('amostra-cor-canvas');
@@ -3136,10 +3168,16 @@ window.onAmostraCorSelect = async function() {
             const pdf = await loadingTask.promise;
             const page = await pdf.getPage(1);
             
+            // Usar escala proporcional unificada baseada no formato da cor
+            const fmt = getAmostraFormato();
+            const scalePxMm = getAmostraScale(fmt, canvas);
+            
             const viewport = page.getViewport({ scale: 1.0 });
-            const containerW = canvas.parentElement.clientWidth - 30;
-            const scale = containerW / viewport.width;
-            const scaledViewport = page.getViewport({ scale: Math.min(scale, 1.5) });
+            // Converter mm para pontos PDF (72 / 25.4 = 2.8346) para saber a escala certa do renderizador
+            const pdfScale = (fmt.width_mm * 2.8346) / viewport.width;
+            
+            // Escala final de renderização
+            const scaledViewport = page.getViewport({ scale: pdfScale * (scalePxMm / 2.8346) });
             
             const context = canvas.getContext('2d');
             canvas.width = scaledViewport.width;
@@ -3198,7 +3236,8 @@ window.onAmostraNumeracaoSelect = function() {
     if (empty) empty.style.display = 'none';
     canvas.style.display = 'block';
 
-    const S = 3.5; // Escala fixa para visualização confortável
+    // Obter escala unificada proporcional
+    const S = getAmostraScale(fmt, canvas);
     canvas.width = Math.round(fmt.width_mm * S);
     canvas.height = Math.round(fmt.height_mm * S);
     const ctx = canvas.getContext('2d');
@@ -3321,6 +3360,9 @@ async function loadAmostraArteFile(file) {
     }
 
     try {
+        const fmt = getAmostraFormato();
+        const S = getAmostraScale(fmt, canvas);
+
         if (ext === 'pdf') {
             if (typeof pdfjsLib === 'undefined') {
                 return toast('PDF.js não disponível. Use JPG/PNG.', 'error');
@@ -3332,9 +3374,14 @@ async function loadAmostraArteFile(file) {
             const page = await pdf.getPage(1);
             
             const vp = page.getViewport({ scale: 1.0 });
-            const containerW = canvas.parentElement.clientWidth - 30;
-            const scale = containerW / vp.width;
-            const scaledViewport = page.getViewport({ scale: Math.min(scale, 1.5) });
+            
+            // Se tivermos um formato ativo, escala a arte para o mesmo tamanho proporcional
+            let pdfScale = 1.0;
+            if (fmt) {
+                pdfScale = (fmt.width_mm * 2.8346) / vp.width;
+            }
+            
+            const scaledViewport = page.getViewport({ scale: pdfScale * (S / 2.8346) });
             
             const context = canvas.getContext('2d');
             canvas.width = scaledViewport.width;
@@ -3346,12 +3393,20 @@ async function loadAmostraArteFile(file) {
             img.src = URL.createObjectURL(file);
             await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
             
-            const containerW = canvas.parentElement.clientWidth - 30;
-            const scale = Math.min(containerW / img.width, 1.5);
+            // Ler DPI da imagem da amostra ou adotar 300 DPI
+            const dpi = await getDpi(file) || 300;
+            const originalW_mm = (img.width / dpi) * 25.4;
+            const originalH_mm = (img.height / dpi) * 25.4;
             
-            canvas.width = img.width * scale;
-            canvas.height = img.height * scale;
+            // Usar o tamanho do formato (se houver) ou o tamanho físico da imagem na mesma escala S
+            const targetW = fmt ? fmt.width_mm : originalW_mm;
+            const targetH = fmt ? fmt.height_mm : originalH_mm;
+            
+            canvas.width = Math.round(targetW * S);
+            canvas.height = Math.round(targetH * S);
             const context = canvas.getContext('2d');
+            
+            // Desenhar a imagem preenchendo/centralizando proporcionalmente se as dimensões diferirem do formato
             context.drawImage(img, 0, 0, canvas.width, canvas.height);
         }
 
