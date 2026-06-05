@@ -68,11 +68,19 @@ O sistema processa dinamicamente a sobreposição de dados em layouts de imposi�
 *   **Sequencial (Standard):** Distribui a sequência linha por linha, coluna por coluna na folha.
 *   **Corte e Empilhamento (Cut & Stack):** Distribui as sequências de modo que, ao cortar as pilhas impressas, a sequência numérica esteja perfeitamente ordenada de forma vertical de baixo para cima ao empilhar as sub-folhas.
 
+### 3. Rotação Individual de Páginas na Grade (Preview & Imposição)
+
+O sistema conta com um recurso premium de **Rotação Individual de Células** na grade de imposição:
+*   **Seleção Visual**: Na aba **Formatos**, abaixo do canvas de preview, o usuário pode clicar em qualquer página/célula da grade. A página selecionada é destacada com uma borda vermelha e uma indicação de ângulo e seta de orientação.
+*   **Controle de Ângulo**: Botões de controle dedicados permitem aplicar rotações rápidas de `0°`, `90°`, `180°` e `270°` na célula selecionada. O preview re-renderiza o layout e a orientação do texto instantaneamente.
+*   **Imposição Final Sincronizada**: Ao submeter o trabalho de imposição, o motor backend (`engine.py`) lê a propriedade `rotations` (um dicionário mapeando o índice de cada célula para o ângulo correspondente) e rotaciona fisicamente tanto a arte de fundo quanto reposiciona/rotaciona de forma compensada todos os dados variáveis (VDP) baseando-se no centro da célula correspondente.
+
 ---
 
 ## 🎨 Funcionalidades de Destaque no Frontend
 
 *   **Ajuda Dinâmica de Zeros (pad):** Ao alterar os dígitos no campo "Zeros (pad)" de uma Numeração, QR ou Barcode, a interface exibe dinamicamente o número total de dígitos e um preview do formato resultante (ex: `(5 dígitos = 00001)`, `(8 dígitos = 00000001)`). A atualização é feita de maneira a não perder o foco do input.
+*   **Controle e Preview de Rotação por Célula**: Interface viva e reativa que mapeia as coordenadas de clique em tela para mm e permite configurar a orientação das páginas uma a uma.
 *   **Arte de Fundo Centralizada:** Ao fazer o upload de uma arte de fundo (PDF/PNG/JPG), ela é centralizada no canvas nos eixos horizontal e vertical, ajustando-se dinamicamente com base nas proporções do formato selecionado.
 *   **Reset de Cache do CSV:** Permite remover um banco de dados e adicioná-lo novamente (mesmo arquivo ou arquivos diferentes) limpando o seletor físico do navegador para evitar problemas de cache de upload.
 
@@ -81,9 +89,9 @@ O sistema processa dinamicamente a sobreposição de dados em layouts de imposi�
 ## 🔌 API REST (FastAPI)
 
 ### **1. Gerenciamento de Formatos (`/api/formatos`)**
-*   `GET /api/formatos`: Lista todos os formatos cadastrados.
+*   `GET /api/formatos`: Lista todos os formatos cadastrados (incluindo o dicionário `rotations`).
 *   `POST /api/formatos`: Cadastra um novo formato.
-*   `PUT /api/formatos/{id}`: Atualiza um formato existente.
+*   `PUT /api/formatos/{id}`: Atualiza um formato existente (persistindo as rotações definidas).
 *   `DELETE /api/formatos/{id}`: Remove um formato.
 
 ### **2. Gerenciamento de Numerações (`/api/numeracoes`)**
@@ -97,4 +105,4 @@ O sistema processa dinamicamente a sobreposição de dados em layouts de imposi�
     *   `base_pdf`: Arquivo PDF original a ser imposicionado.
     *   `csv_file` (Opcional): Arquivo CSV com a tabela de dados dinâmicos.
     *   `config`: String JSON contendo os parâmetros de imposição (`formato_id`, `numeracao_id`, `saida_id`, lógica de sequência, etc.).
-    *   *Retorno:* Arquivo PDF montado com imposição e dados dinâmicos aplicados.
+    *   *Retorno:* Arquivo PDF montado com imposição e dados dinâmicos aplicados respeitando as rotações individuais das páginas.
