@@ -3503,25 +3503,25 @@ function renderAmostraCombinada() {
         ctx.fillRect(0, 0, canvasComb.width, canvasComb.height);
     }
 
-    // 2. Desenhar a Camada 2: Arte com efeito similar ao Photoshop Multiply (centralizada na janela da cor)
+    // 2. Desenhar a Camada 2: Arte com efeito similar ao Photoshop Multiply (centralizada mantendo o tamanho original do canvas da arte)
     if (hasArte && arteCanvas && arteCanvas.style.display !== 'none' && arteCanvas.width > 0) {
         ctx.save();
         ctx.globalCompositeOperation = 'multiply';
-        // Centralizar horizontal e verticalmente mantendo seu próprio tamanho original
+        // Centralizar horizontal e verticalmente mantendo exatamente seu próprio tamanho original
         const dx = (canvasComb.width - arteCanvas.width) / 2;
         const dy = (canvasComb.height - arteCanvas.height) / 2;
-        ctx.drawImage(arteCanvas, dx, dy, arteCanvas.width, arteCanvas.height);
+        ctx.drawImage(arteCanvas, dx, dy);
         ctx.restore();
     }
 
-    // 3. Desenhar a Camada 3: Numeração com efeito similar ao Photoshop Multiply (centralizada na janela da cor)
+    // 3. Desenhar a Camada 3: Numeração com efeito similar ao Photoshop Multiply (centralizada mantendo o tamanho original do canvas da numeração)
     if (numId && numCanvas && numCanvas.style.display !== 'none' && numCanvas.width > 0) {
         ctx.save();
         ctx.globalCompositeOperation = 'multiply';
-        // Centralizar horizontal e verticalmente mantendo seu próprio tamanho original
+        // Centralizar horizontal e verticalmente mantendo exatamente seu próprio tamanho original
         const dx = (canvasComb.width - numCanvas.width) / 2;
         const dy = (canvasComb.height - numCanvas.height) / 2;
-        ctx.drawImage(numCanvas, dx, dy, numCanvas.width, numCanvas.height);
+        ctx.drawImage(numCanvas, dx, dy);
         ctx.restore();
     }
 
