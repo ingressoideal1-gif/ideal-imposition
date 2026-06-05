@@ -504,62 +504,60 @@
                     </div>
                 </div>
 
-                <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 20px; align-items: start;">
-                    <!-- Formulário de Nova Cor -->
-                    <div class="card" style="margin-bottom: 0;">
-                        <div class="card-header">
-                            <span class="card-title"><span class="icon">🎨</span> <span id="cor-form-title">Nova Cor</span></span>
-                            <div style="display:flex;gap:8px;">
-                                <button class="btn btn-ghost btn-sm" id="btn-cor-cancel" style="display:none" onclick="cancelCorEdit()">Cancelar</button>
-                                <button class="btn btn-primary btn-sm" id="btn-cor-save" onclick="saveCor()">💾 Salvar</button>
-                            </div>
-                        </div>
-                        <input type="hidden" id="cor-id">
-                        <div class="form-grid" style="grid-template-columns: 2fr 2fr 1fr 1fr;">
-                            <div class="form-group">
-                                <label>Nome da Cor</label>
-                                <input type="text" class="form-control" id="cor-name" placeholder="Ex: Azul Escuro">
-                            </div>
-                            <div class="form-group">
-                                <label>Formato Base</label>
-                                <select class="form-control" id="cor-formato" onchange="onCorFormatoSelect()">
-                                    <option value="">— Selecione —</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label>Largura (mm)</label>
-                                <input type="number" class="form-control" id="cor-w" min="1" step="0.1">
-                            </div>
-                            <div class="form-group">
-                                <label>Altura (mm)</label>
-                                <input type="number" class="form-control" id="cor-h" min="1" step="0.1">
-                            </div>
-                        </div>
-                        <div class="divider" style="margin: 16px 0 12px 0;"></div>
-                        <div class="form-group">
-                            <label>Arquivo PDF de Referência</label>
-                            <div style="display:flex; gap:10px; align-items: center; flex-wrap: wrap;">
-                                <label class="btn btn-sm btn-secondary" for="cor-pdf-file" style="margin: 0; cursor: pointer;">
-                                    📄 Upload PDF
-                                </label>
-                                <input type="file" id="cor-pdf-file" accept=".pdf" style="display:none">
-                                <button class="btn btn-sm btn-ghost btn-danger" id="btn-remove-cor-pdf" style="display:none; padding: 4px 8px;" onclick="clearCorPdfFile()">✕ Remover</button>
-                                <span id="cor-pdf-file-name" style="font-size:0.82rem; color:var(--text-dim)"></span>
-                            </div>
+                <!-- Formulário de Nova Cor -->
+                <div class="card" style="margin-bottom: 20px;">
+                    <div class="card-header">
+                        <span class="card-title"><span class="icon">🎨</span> <span id="cor-form-title">Nova Cor</span></span>
+                        <div style="display:flex;gap:8px;">
+                            <button class="btn btn-ghost btn-sm" id="btn-cor-cancel" style="display:none" onclick="cancelCorEdit()">Cancelar</button>
+                            <button class="btn btn-primary btn-sm" id="btn-cor-save" onclick="saveCor()">💾 Salvar</button>
                         </div>
                     </div>
-
-                    <!-- Janela de Visualização do PDF de Referência (na tela de Cores/Edição) -->
-                    <div class="card" style="margin-bottom: 0;">
-                        <div class="card-header">
-                            <span class="card-title">👁️ Visualização do PDF de Referência</span>
+                    <input type="hidden" id="cor-id">
+                    <div class="form-grid" style="grid-template-columns: 2fr 2fr 1fr 1fr;">
+                        <div class="form-group">
+                            <label>Nome da Cor</label>
+                            <input type="text" class="form-control" id="cor-name" placeholder="Ex: Azul Escuro">
                         </div>
-                        <div style="display: flex; justify-content: center; align-items: center; min-height: 250px; background: var(--bg-body); border-radius: var(--radius); padding: 15px; overflow: auto; border: 1px solid var(--border);">
-                            <canvas id="cor-pdf-preview-canvas" style="max-width: 100%; height: auto; display: none; box-shadow: var(--shadow); border: 1px solid var(--border); background: #ffffff;"></canvas>
-                            <div id="cor-pdf-preview-empty" style="text-align: center; color: var(--text-dim); padding: 20px;">
-                                <div style="font-size: 2.5rem; margin-bottom: 12px; opacity: 0.7;">📄</div>
-                                <p style="font-size: 0.85rem; font-weight: 500;">Faça upload de um PDF para visualizar.</p>
-                            </div>
+                        <div class="form-group">
+                            <label>Formato Base</label>
+                            <select class="form-control" id="cor-formato" onchange="onCorFormatoSelect()">
+                                <option value="">— Selecione —</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Largura (mm)</label>
+                            <input type="number" class="form-control" id="cor-w" min="1" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label>Altura (mm)</label>
+                            <input type="number" class="form-control" id="cor-h" min="1" step="0.1">
+                        </div>
+                    </div>
+                    <div class="divider" style="margin: 16px 0 12px 0;"></div>
+                    <div class="form-group">
+                        <label>Arquivo PDF de Referência</label>
+                        <div style="display:flex; gap:10px; align-items: center; flex-wrap: wrap;">
+                            <label class="btn btn-sm btn-secondary" for="cor-pdf-file" style="margin: 0; cursor: pointer;">
+                                📄 Upload PDF
+                            </label>
+                            <input type="file" id="cor-pdf-file" accept=".pdf" style="display:none">
+                            <button class="btn btn-sm btn-ghost btn-danger" id="btn-remove-cor-pdf" style="display:none; padding: 4px 8px;" onclick="clearCorPdfFile()">✕ Remover</button>
+                            <span id="cor-pdf-file-name" style="font-size:0.82rem; color:var(--text-dim)"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Janela de Visualização do PDF de Referência (Abaixo do formulário, alinhado na largura) -->
+                <div class="card" style="margin-bottom: 0;">
+                    <div class="card-header">
+                        <span class="card-title">👁️ Visualização do PDF de Referência</span>
+                    </div>
+                    <div style="display: flex; justify-content: center; align-items: center; min-height: 300px; background: var(--bg-body); border-radius: var(--radius); padding: 15px; overflow: auto; border: 1px solid var(--border);">
+                        <canvas id="cor-pdf-preview-canvas" style="max-width: 100%; height: auto; display: none; box-shadow: var(--shadow); border: 1px solid var(--border); background: #ffffff;"></canvas>
+                        <div id="cor-pdf-preview-empty" style="text-align: center; color: var(--text-dim); padding: 20px;">
+                            <div style="font-size: 2.5rem; margin-bottom: 12px; opacity: 0.7;">📄</div>
+                            <p style="font-size: 0.85rem; font-weight: 500;">Faça upload de um PDF para visualizar.</p>
                         </div>
                     </div>
                 </div>
