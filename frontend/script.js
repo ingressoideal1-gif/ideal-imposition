@@ -2609,9 +2609,25 @@ window.runImposition = async function () {
 
     const overlay = document.getElementById('loading-overlay');
     const sub = document.getElementById('loading-sub');
-    const total = end - start + 1;
+    const pBar = document.getElementById('loading-progress-bar');
+    const pText = document.getElementById('loading-progress-text');
+
+    // Calcular o total correto de itens baseando-se no esquema
+    const isPdfMultiple = schema === "pdf_multiple";
+    let total = 1;
+    if (isPdfMultiple) {
+        const totalPages = state.impArtPdfDoc ? state.impArtPdfDoc.numPages : 1;
+        total = state.printMode === 'duplex' ? Math.ceil(totalPages / 2) : totalPages;
+    } else if (state.csvData) {
+        total = state.csvData.length;
+    } else {
+        total = end - start + 1;
+    }
+
     overlay.classList.add('active');
     sub.textContent = `Gerando ${total.toLocaleString('pt-BR')} itens...`;
+    if (pBar) pBar.style.width = '0%';
+    if (pText) pText.textContent = 'Iniciando... (0%)';
     document.getElementById('btn-impose').disabled = true;
 
     // Instancia o AbortController e associa ao botão de cancelamento
@@ -2624,6 +2640,8 @@ window.runImposition = async function () {
             }
         };
     }
+
+    let progressInterval = null;
 
     try {
         let baseUrl = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : '';
