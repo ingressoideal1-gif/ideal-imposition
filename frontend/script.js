@@ -730,13 +730,19 @@ function populateSelects() {
             sel.innerHTML = '<option value="">— Selecione —</option>' +
                 state.formatos.map(f => `<option value="${f.id}">${f.name}</option>`).join('');
         } else if (id === 'imp-numeracao') {
+            const selectedFmt = document.getElementById('imp-formato')?.value;
+            const filteredNums = selectedFmt ? state.numeracoes.filter(n => n.formato_id === selectedFmt) : state.numeracoes;
             sel.innerHTML = '<option value="">— Sem numeração —</option>' +
-                state.numeracoes.map(n => `<option value="${n.id}">${n.name}</option>`).join('');
+                filteredNums.map(n => `<option value="${n.id}">${n.name}</option>`).join('');
         } else {
             sel.innerHTML = '<option value="">— Selecione —</option>' +
                 state.saidas.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
         }
-        if (cur) sel.value = cur;
+        if (cur) {
+            const optionExists = Array.from(sel.options).some(opt => opt.value === cur);
+            if (optionExists) sel.value = cur;
+            else sel.value = '';
+        }
     });
 
     // Amostras
@@ -751,9 +757,15 @@ function populateSelects() {
     const selAmNum = document.getElementById('amostra-numeracao');
     if (selAmNum) {
         const cur = selAmNum.value;
+        const selectedCorId = document.getElementById('amostra-cor')?.value;
+        const selectedCor = state.cores.find(c => c.id === selectedCorId);
+        const filteredNums = (selectedCor && selectedCor.formato_id) 
+            ? state.numeracoes.filter(n => n.formato_id === selectedCor.formato_id) 
+            : state.numeracoes;
         selAmNum.innerHTML = '<option value="">— Selecione uma Numeração —</option>' +
-            state.numeracoes.map(n => `<option value="${n.id}">${n.name}</option>`).join('');
-        if (cur) selAmNum.value = cur;
+            filteredNums.map(n => `<option value="${n.id}">${n.name}</option>`).join('');
+        if (cur && filteredNums.some(n => n.id === cur)) selAmNum.value = cur;
+        else selAmNum.value = '';
     }
 }
 
@@ -2403,6 +2415,25 @@ function drawPreview() {
 }
 
 function updateImpSummary() {
+    const fmtSelect = document.getElementById('imp-formato');
+    const numSelect = document.getElementById('imp-numeracao');
+    const lastFmtId = numSelect.getAttribute('data-last-fmt') || '';
+    const currentFmtId = fmtSelect ? fmtSelect.value : '';
+
+    if (currentFmtId !== lastFmtId) {
+        const curNumVal = numSelect.value;
+        const filteredNums = currentFmtId ? state.numeracoes.filter(n => n.formato_id === currentFmtId) : state.numeracoes;
+        numSelect.innerHTML = '<option value="">— Sem numeração —</option>' +
+            filteredNums.map(n => `<option value="${n.id}">${n.name}</option>`).join('');
+        
+        if (filteredNums.some(n => n.id === curNumVal)) {
+            numSelect.value = curNumVal;
+        } else {
+            numSelect.value = "";
+        }
+        numSelect.setAttribute('data-last-fmt', currentFmtId);
+    }
+
     const fmtId = document.getElementById('imp-formato').value;
     const numId = document.getElementById('imp-numeracao').value;
     const saiId = document.getElementById('imp-saida').value;
@@ -3505,6 +3536,24 @@ window.onAmostraCorSelect = async function() {
     const empty = document.getElementById('amostra-cor-empty');
     const badge = document.getElementById('amostra-cor-badge');
     
+    // Filtrar as numerações com base no formato associado a esta cor
+    const cor = corId ? state.cores.find(c => c.id === corId) : null;
+    const numSelect = document.getElementById('amostra-numeracao');
+    if (numSelect) {
+        const curNumVal = numSelect.value;
+        const filteredNums = (cor && cor.formato_id) ? state.numeracoes.filter(n => n.formato_id === cor.formato_id) : state.numeracoes;
+        numSelect.innerHTML = '<option value="">— Selecione uma Numeração —</option>' +
+            filteredNums.map(n => `<option value="${n.id}">${n.name}</option>`).join('');
+        
+        if (filteredNums.some(n => n.id === curNumVal)) {
+            numSelect.value = curNumVal;
+        } else {
+            numSelect.value = "";
+            // Disparar atualização visual se limpou a numeração
+            window.onAmostraNumeracaoSelect();
+        }
+    }
+    
     if (!corId) {
         if (canvas) canvas.style.display = 'none';
         if (empty) {
@@ -3515,7 +3564,6 @@ window.onAmostraCorSelect = async function() {
         return;
     }
 
-    const cor = state.cores.find(c => c.id === corId);
     if (!cor) return;
 
     if (badge) badge.textContent = cor.name;
