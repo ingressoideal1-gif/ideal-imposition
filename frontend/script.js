@@ -2000,6 +2000,25 @@ function deselectAllCards() {
 }
 
 // ─── Salvar Numeração ─────────────────────────────────────────────────────────
+async function uploadToStorage(content, fileName, path) {
+    if (!content) return content;
+    if (!storageFirebase) return content;
+    if (content.startsWith('http')) return content; // Already a URL
+
+    let blob;
+    if (content.startsWith('data:')) {
+        const res = await fetch(content);
+        blob = await res.blob();
+    } else {
+        blob = new Blob([content], { type: 'image/svg+xml' });
+    }
+
+    const safeName = fileName ? fileName.replace(/[^a-zA-Z0-9.\-_]/g, '_') : 'arquivo';
+    const ref = storageFirebase.ref().child(`${path}/${Date.now()}_${safeName}`);
+    await ref.put(blob);
+    return await ref.getDownloadURL();
+}
+
 window.saveNumeracao = async function () {
     const id = document.getElementById('num-id').value;
     const name = document.getElementById('num-name').value.trim();
@@ -2008,32 +2027,38 @@ window.saveNumeracao = async function () {
     if (!name) return toast('Informe um nome para a numeração.', 'error');
     if (!fmtId) return toast('Selecione um formato.', 'error');
 
-    const data = {
-        name,
-        formato_id: fmtId,
-        csv_filename: state.numCsvFilename || "",
-        csv_headers: state.numCsvHeaders || [],
-        csv_data: state.numCsvData || null,
-        svg_content: state.numSvgContent || "",
-        svg_filename: state.numSvgFilename || "",
-        pdf_content: state.numPdfContent || "",
-        pdf_filename: state.numPdfFilename || "",
-        elements: state.numElements.map(el => {
-            const e = { ...el };
-            if (e.type === 'FIXED') e.fixed = true;
-            if (e.type === 'SVG') e.svg_content = state.numSvgContent || "";
-            if (e.type === 'PDF') e.pdf_content = state.numPdfContent || "";
-            return e;
-        })
-    };
+    toast('Fazendo upload e salvando (isso pode demorar alguns segundos)...', 'info');
 
     try {
+        const svgUrl = await uploadToStorage(state.numSvgContent, state.numSvgFilename || 'arquivo.svg', 'uploads_svg');
+        const pdfUrl = await uploadToStorage(state.numPdfContent, state.numPdfFilename || 'arquivo.pdf', 'uploads_pdf');
+
+        state.numSvgContent = svgUrl;
+        state.numPdfContent = pdfUrl;
+
+        const data = {
+            name,
+            formato_id: fmtId,
+            csv_filename: state.numCsvFilename || "",
+            csv_headers: state.numCsvHeaders || [],
+            csv_data: state.numCsvData || null,
+            svg_content: svgUrl || "",
+            svg_filename: state.numSvgFilename || "",
+            pdf_content: pdfUrl || "",
+            pdf_filename: state.numPdfFilename || "",
+            elements: state.numElements.map(el => {
+                const e = { ...el };
+                if (e.type === 'FIXED') e.fixed = true;
+                if (e.type === 'SVG') e.svg_content = svgUrl || "";
+                if (e.type === 'PDF') e.pdf_content = pdfUrl || "";
+                return e;
+            })
+        };
+
         if (id) {
-            // Editando existente
             await api('PUT', `/numeracoes/${id}`, data);
             toast('Numeração atualizada!', 'success');
         } else {
-            // Novo: verifica se já existe com mesmo nome (Bug 2)
             const existing = state.numeracoes.find(
                 n => n.name.trim().toLowerCase() === name.toLowerCase()
             );
@@ -2048,7 +2073,6 @@ window.saveNumeracao = async function () {
         cancelNumEdit();
         await loadAll();
 
-        // Redirecionar para o Catálogo
         document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.view-section').forEach(v => v.classList.remove('active'));
         document.getElementById('nav-catalogo').classList.add('active');

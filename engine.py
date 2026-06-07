@@ -310,10 +310,17 @@ class ImpositionEngine:
                 rect = fitz.Rect(el_x, el_y, el_x + w_pt, el_y + h_pt)
                 try:
                     import io
+                    import urllib.request
                     from svglib.svglib import svg2rlg
                     from reportlab.graphics import renderPDF
                     
-                    drawing = svg2rlg(io.StringIO(svg_content))
+                    if svg_content.startswith("http"):
+                        req = urllib.request.urlopen(svg_content)
+                        svg_data = req.read().decode("utf-8")
+                    else:
+                        svg_data = svg_content
+
+                    drawing = svg2rlg(io.StringIO(svg_data))
                     pdf_bytes = renderPDF.drawToString(drawing)
                     pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
                     page.show_pdf_page(rect, pdf_doc, 0, keep_proportion=True, rotate=angle)
@@ -323,11 +330,18 @@ class ImpositionEngine:
         elif t == "PDF":
             pdf_content = el.get("pdf_content") or ""
             if pdf_content:
-                import base64
-                if pdf_content.startswith("data:"):
-                    pdf_content = pdf_content.split(",", 1)[-1]
                 try:
-                    pdf_bytes = base64.b64decode(pdf_content)
+                    import base64
+                    import urllib.request
+                    
+                    if pdf_content.startswith("http"):
+                        req = urllib.request.urlopen(pdf_content)
+                        pdf_bytes = req.read()
+                    else:
+                        if pdf_content.startswith("data:"):
+                            pdf_content = pdf_content.split(",", 1)[-1]
+                        pdf_bytes = base64.b64decode(pdf_content)
+                        
                     pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
                     w_mm = el.get("width_mm")
                     if w_mm is not None:

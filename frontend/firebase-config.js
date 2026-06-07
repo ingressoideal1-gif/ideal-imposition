@@ -17,13 +17,15 @@ const API_BASE_URL = (window.location.hostname === "localhost" || window.locatio
     : "https://ideal-imposition.onrender.com";
 
 let dbFirebase = null;
+let storageFirebase = null;
 
 // Inicializa o Firebase apenas se a configuração for preenchida
 if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "SUA_API_KEY") {
     try {
         firebase.initializeApp(firebaseConfig);
         dbFirebase = firebase.firestore();
-        console.log("Firebase Firestore inicializado com sucesso!");
+        storageFirebase = firebase.storage();
+        console.log("Firebase Firestore e Storage inicializados com sucesso!");
     } catch (e) {
         console.error("Erro ao inicializar o Firebase:", e);
     }
