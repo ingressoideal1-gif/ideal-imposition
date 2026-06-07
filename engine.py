@@ -357,7 +357,7 @@ class ImpositionEngine:
                     base_w = page_base.rect.width
                     base_h = page_base.rect.height
 
-                    # Posição da célula
+                    # Posição da célula final
                     cell_x0 = start_x + col * (cfg.item_w + cfg.gap_h)
                     cell_y0 = start_y + row * (cfg.item_h + cfg.gap_v)
                     cell_x1 = cell_x0 + cfg.item_w
@@ -365,51 +365,56 @@ class ImpositionEngine:
 
                     cell_rotation = int(cfg.rotations.get(str(P), 0))
 
-                    # Centralizar e aplicar offset
-                    center_x = cell_x0 + (cfg.item_w - base_w) / 2
-                    center_y = cell_y0 + (cfg.item_h - base_h) / 2
+                    # 1. Criar PDF temporário para renderizar o item + elementos VDP (sem rotação da célula inicialmente)
+                    temp_doc = fitz.open()
+                    temp_page = temp_doc.new_page(width=cfg.item_w, height=cfg.item_h)
 
-                    art_x0 = center_x + cfg.offset_h
-                    art_y0 = center_y - cfg.offset_v
-                    art_x1 = art_x0 + base_w
-                    art_y1 = art_y0 + base_h
+                    # Centralizar e aplicar offset no plano da célula temporária
+                    art_temp_x0 = (cfg.item_w - base_w) / 2 + cfg.offset_h
+                    art_temp_y0 = (cfg.item_h - base_h) / 2 - cfg.offset_v
+                    art_temp_x1 = art_temp_x0 + base_w
+                    art_temp_y1 = art_temp_y0 + base_h
+                    rect_art_temp = fitz.Rect(art_temp_x0, art_temp_y0, art_temp_x1, art_temp_y1)
 
-                    rect_art = fitz.Rect(art_x0, art_y0, art_x1, art_y1)
-                    
-                    if cell_rotation != 0:
-                        out_page_front.show_pdf_page(rect_art, doc_base, page_idx_front, keep_proportion=True, rotate=cell_rotation, clip=page_base.rect)
-                    else:
-                        out_page_front.show_pdf_page(rect_art, doc_base, page_idx_front, clip=page_base.rect)
+                    # Inserir arte na página temporária
+                    temp_page.show_pdf_page(rect_art_temp, doc_base, page_idx_front, clip=page_base.rect)
 
-                    # Renderizar VDP da Frente
+                    # Renderizar VDP na página temporária
                     val = cfg.seq_start + (item_index * cfg.seq_increment)
                     csv_row = cfg.csv_data[item_index] if cfg.csv_data else None
+
                     for el in cfg.elements:
                         # Filtrar elementos que são apenas para verso
                         if el.get("face", "both") == "back":
                             continue
-                            
-                        if cell_rotation != 0:
-                            cx = cell_x0 + cfg.item_w / 2
-                            cy = cell_y0 + cfg.item_h / 2
-                            dx = (cell_x0 + el["_x"]) - cx
-                            dy = (cell_y0 + el["_y"]) - cy
-                            rad = math.radians(cell_rotation)
-                            cos_a = math.cos(rad)
-                            sin_a = math.sin(rad)
-                            rx = dx * cos_a - dy * sin_a
-                            ry = dx * sin_a + dy * cos_a
-                            rot_el_x = cx + rx
-                            rot_el_y = cy + ry
-                            
-                            rotated_el = dict(el)
-                            rotated_el["rotation"] = (el.get("rotation", 0) + cell_rotation) % 360
-                            rotated_el["_x"] = rot_el_x - cell_x0
-                            rotated_el["_y"] = rot_el_y - cell_y0
-                            
-                            self._render_element(out_page_front, rotated_el, cell_x0, cell_y0, val, csv_row)
-                        else:
-                            self._render_element(out_page_front, el, cell_x0, cell_y0, val, csv_row)
+
+                        # Mantemos a rotação configurada original do elemento, mas não a rotação da célula (que será aplicada na folha inteira)
+                        rotated_el = dict(el)
+                        rotated_el["rotation"] = el.get("rotation", 0)
+
+                        if "size_mm" in el:
+                            rotated_el["_size"] = el["size_mm"] * MM2PT
+                        if "width_mm" in el and el["type"] == "BARCODE":
+                            rotated_el["_w"] = el["width_mm"] * MM2PT
+                            rotated_el["_h"] = el.get("height_mm", 10) * MM2PT
+                        if "width_mm" in el and el["type"] == "SVG":
+                            rotated_el["width_mm"] = el["width_mm"]
+                            rotated_el["height_mm"] = el.get("height_mm", 20)
+                        if el["type"] in ("TEXT", "FIXED"):
+                            rotated_el["font_size"] = el.get("font_size", 12)
+
+                        # Renderiza na página temporária usando coordenadas relativas diretas
+                        self._render_element(temp_page, rotated_el, 0, 0, val, csv_row)
+
+                    # 2. Impor a página temporária completa (arte + VDP) na folha final, aplicando a rotação da célula
+                    out_page_front.show_pdf_page(
+                        fitz.Rect(cell_x0, cell_y0, cell_x1, cell_y1),
+                        temp_doc,
+                        0,
+                        keep_proportion=True,
+                        rotate=cell_rotation
+                    )
+                    temp_doc.close()
 
             # 2. RENDERIZAR VERSO DA FOLHA (SE DUPLEX)
             if is_duplex:
@@ -440,7 +445,7 @@ class ImpositionEngine:
                         else:
                             page_idx_back = 1 if len(doc_base) >= 2 else None
 
-                        # Posição física da célula de verso
+                        # Posição física da célula de verso na folha final
                         cell_x0 = start_x + col_verso * (cfg.item_w + cfg.gap_h)
                         cell_y0 = start_y + row * (cfg.item_h + cfg.gap_v)
                         cell_x1 = cell_x0 + cfg.item_w
@@ -449,55 +454,59 @@ class ImpositionEngine:
                         cell_rotation_frente = int(cfg.rotations.get(str(P), 0))
                         cell_rotation = (360 - cell_rotation_frente) % 360
 
+                        # 1. Criar PDF temporário para renderizar o verso do item + elementos VDP
+                        temp_doc = fitz.open()
+                        temp_page = temp_doc.new_page(width=cfg.item_w, height=cfg.item_h)
+
                         if page_idx_back is not None:
-                            page_base = doc_base[page_idx_back]
-                            base_w = page_base.rect.width
-                            base_h = page_base.rect.height
+                            page_base_v = doc_base[page_idx_back]
+                            base_w_verso = page_base_v.rect.width
+                            base_h_verso = page_base_v.rect.height
 
-                            center_x = cell_x0 + (cfg.item_w - base_w) / 2
-                            center_y = cell_y0 + (cfg.item_h - base_h) / 2
+                            # Centralizar e aplicar offset no plano da célula temporária
+                            art_temp_x0 = (cfg.item_w - base_w_verso) / 2 + cfg.offset_h
+                            art_temp_y0 = (cfg.item_h - base_h_verso) / 2 - cfg.offset_v
+                            art_temp_x1 = art_temp_x0 + base_w_verso
+                            art_temp_y1 = art_temp_y0 + base_h_verso
+                            rect_art_temp = fitz.Rect(art_temp_x0, art_temp_y0, art_temp_x1, art_temp_y1)
 
-                            art_x0 = center_x + cfg.offset_h
-                            art_y0 = center_y - cfg.offset_v
-                            art_x1 = art_x0 + base_w
-                            art_y1 = art_y0 + base_h
+                            # Inserir arte na página temporária
+                            temp_page.show_pdf_page(rect_art_temp, doc_base, page_idx_back, clip=page_base_v.rect)
 
-                            rect_art = fitz.Rect(art_x0, art_y0, art_x1, art_y1)
-                            
-                            if cell_rotation != 0:
-                                out_page_back.show_pdf_page(rect_art, doc_base, page_idx_back, keep_proportion=True, rotate=cell_rotation, clip=page_base.rect)
-                            else:
-                                out_page_back.show_pdf_page(rect_art, doc_base, page_idx_back, clip=page_base.rect)
-
-                        # Renderizar VDP do Verso
+                        # Renderizar VDP na página temporária
                         val = cfg.seq_start + (item_index * cfg.seq_increment)
                         csv_row = cfg.csv_data[item_index] if cfg.csv_data else None
+
                         for el in cfg.elements:
                             # Filtrar elementos que são apenas para frente
                             if el.get("face", "both") == "front":
                                 continue
 
-                            if cell_rotation != 0:
-                                cx = cell_x0 + cfg.item_w / 2
-                                cy = cell_y0 + cfg.item_h / 2
-                                dx = (cell_x0 + el["_x"]) - cx
-                                dy = (cell_y0 + el["_y"]) - cy
-                                rad = math.radians(cell_rotation)
-                                cos_a = math.cos(rad)
-                                sin_a = math.sin(rad)
-                                rx = dx * cos_a - dy * sin_a
-                                ry = dx * sin_a + dy * cos_a
-                                rot_el_x = cx + rx
-                                rot_el_y = cy + ry
-                                
-                                rotated_el = dict(el)
-                                rotated_el["rotation"] = (el.get("rotation", 0) + cell_rotation) % 360
-                                rotated_el["_x"] = rot_el_x - cell_x0
-                                rotated_el["_y"] = rot_el_y - cell_y0
-                                
-                                self._render_element(out_page_back, rotated_el, cell_x0, cell_y0, val, csv_row)
-                            else:
-                                self._render_element(out_page_back, el, cell_x0, cell_y0, val, csv_row)
+                            rotated_el = dict(el)
+                            rotated_el["rotation"] = el.get("rotation", 0)
+
+                            if "size_mm" in el:
+                                rotated_el["_size"] = el["size_mm"] * MM2PT
+                            if "width_mm" in el and el["type"] == "BARCODE":
+                                rotated_el["_w"] = el["width_mm"] * MM2PT
+                                rotated_el["_h"] = el.get("height_mm", 10) * MM2PT
+                            if "width_mm" in el and el["type"] == "SVG":
+                                rotated_el["width_mm"] = el["width_mm"]
+                                rotated_el["height_mm"] = el.get("height_mm", 20)
+                            if el["type"] in ("TEXT", "FIXED"):
+                                rotated_el["font_size"] = el.get("font_size", 12)
+
+                            self._render_element(temp_page, rotated_el, 0, 0, val, csv_row)
+
+                        # 2. Impor a página temporária de verso na folha final, aplicando a rotação correspondente
+                        out_page_back.show_pdf_page(
+                            fitz.Rect(cell_x0, cell_y0, cell_x1, cell_y1),
+                            temp_doc,
+                            0,
+                            keep_proportion=True,
+                            rotate=cell_rotation
+                        )
+                        temp_doc.close()
 
         doc_out.save(cfg.out_pdf, garbage=3, deflate=True)
         doc_base.close()

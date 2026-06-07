@@ -72,5 +72,19 @@ service cloud.firestore {
     match /cores/{document} {
       allow read, write: if true;
     }
+
+    // ── Coleções do Ideal Control ─────────────────────────────────────────────
+    match /eventos/{document=**} {
+      allow read, write: if true;
+    }
+    match /permissoes_area/{document=**} {
+      allow read, write: if true;
+    }
+    match /credenciais/{document=**} {
+      allow read, write: if true;
+    }
+    match /logs_acesso/{document=**} {
+      allow read, write: if true;
+    }
   }
 }
