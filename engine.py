@@ -693,6 +693,10 @@ class ImpositionEngine:
                         temp_doc.close()
 
         doc_out.save(cfg.out_pdf, garbage=3, deflate=True)
-        doc_base.close()
+        if doc_base:
+            doc_base.close()
+        for doc in pdf_cache.values():
+            if doc:
+                doc.close()
         doc_out.close()
         print(f"[engine] Gerado: {cfg.out_pdf} ({total_sheets * (2 if is_duplex else 1)} folha(s) fisicas, {cfg.total_items} itens)")
