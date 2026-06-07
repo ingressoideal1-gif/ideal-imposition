@@ -2540,8 +2540,6 @@ function drawPreview() {
     ctx.strokeRect(0, 0, canvas.width, canvas.height);
 }
 
-}
-
 window.toggleMultiArtes = function() {
     const schema = document.getElementById('imp-schema').value;
     const isMulti = schema === 'multi_artes';
@@ -2566,11 +2564,11 @@ window.toggleMultiArtes = function() {
 
 window.addMultiArte = function() {
     state.impMultiArtes.push({
-        nome: `Arte ${state.impMultiArtes.length + 1}`,
-        fontSize: 10,
+        pdf_url: null,
+        pdf_name: '',
         qtd: 100,
-        num1: 1,
-        num2: 1
+        num1_id: '',
+        num2_id: ''
     });
     renderMultiArtes();
     updateImpSummary();
@@ -2584,38 +2582,73 @@ window.removeMultiArte = function(index) {
 };
 
 window.updateMultiArte = function(index, field, value) {
-    if (field === 'qtd' || field === 'num1' || field === 'num2' || field === 'fontSize') {
-        value = parseInt(value) || 0;
-    }
+    if (field === 'qtd') value = parseInt(value) || 0;
     state.impMultiArtes[index][field] = value;
     if (field === 'qtd') updateImpSummary();
+};
+
+window.uploadMultiArtePdf = async function(index, fileInput) {
+    if (!fileInput.files || !fileInput.files[0]) return;
+    const file = fileInput.files[0];
+    if (file.type !== "application/pdf") {
+        toast("Por favor, selecione um arquivo PDF.", "error");
+        fileInput.value = "";
+        return;
+    }
+    
+    // Mostra feedback de carregamento
+    const btnId = `btn-upload-multi-${index}`;
+    const btn = document.getElementById(btnId);
+    if(btn) {
+        btn.innerHTML = `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>`;
+        btn.disabled = true;
+    }
+
+    try {
+        const url = await uploadToStorage(file, `imposicoes/multi_artes/${Date.now()}_${file.name}`);
+        state.impMultiArtes[index].pdf_url = url;
+        state.impMultiArtes[index].pdf_name = file.name;
+        toast(`PDF da Arte ${index + 1} carregado!`, "success");
+    } catch (e) {
+        console.error("Erro upload PDF Multi:", e);
+        toast("Erro ao fazer upload do PDF.", "error");
+    }
+    renderMultiArtes();
 };
 
 window.renderMultiArtes = function() {
     const list = document.getElementById('multi-artes-list');
     if (!list) return;
 
+    // Gerar options das numerações
+    const numOptions = `<option value="">- Nenhuma -</option>` + state.numeracoes.map(n => `<option value="${n.id}">${n.name}</option>`).join('');
+
     list.innerHTML = state.impMultiArtes.map((a, i) => `
         <div style="display:flex; gap:10px; align-items:center; background:var(--bg-color); padding:10px; border-radius:6px; border:1px solid var(--border-color);">
-            <div style="flex:2">
-                <label style="font-size:0.75rem; color:var(--text-dim); display:block; margin-bottom:4px;">Nome impresso</label>
-                <input type="text" class="form-control" value="${a.nome}" onchange="updateMultiArte(${i}, 'nome', this.value)" style="height:32px;">
-            </div>
-            <div style="flex:1">
-                <label style="font-size:0.75rem; color:var(--text-dim); display:block; margin-bottom:4px;">Tamanho (pt)</label>
-                <input type="number" class="form-control" value="${a.fontSize}" min="1" onchange="updateMultiArte(${i}, 'fontSize', this.value)" style="height:32px;">
+            <div style="flex:2; display:flex; flex-direction:column; gap:4px;">
+                <label style="font-size:0.75rem; color:var(--text-dim);">Arte (PDF Base)</label>
+                <div style="display:flex; gap:5px; align-items:center;">
+                    <button class="btn btn-sm ${a.pdf_url ? 'btn-outline' : 'btn-primary'}" id="btn-upload-multi-${i}" onclick="document.getElementById('file-multi-${i}').click()" style="width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${a.pdf_name || 'Upload PDF'}">
+                        ${a.pdf_name ? '📄 ' + a.pdf_name : '📁 Escolher PDF'}
+                    </button>
+                    <input type="file" id="file-multi-${i}" accept=".pdf" style="display:none" onchange="uploadMultiArtePdf(${i}, this)">
+                </div>
             </div>
             <div style="flex:1">
                 <label style="font-size:0.75rem; color:var(--text-dim); display:block; margin-bottom:4px;">Qtd (un)</label>
                 <input type="number" class="form-control" value="${a.qtd}" min="1" oninput="updateMultiArte(${i}, 'qtd', this.value)" style="height:32px; border-color:var(--blue);">
             </div>
-            <div style="flex:1">
-                <label style="font-size:0.75rem; color:var(--text-dim); display:block; margin-bottom:4px;">Num1 (Ini)</label>
-                <input type="number" class="form-control" value="${a.num1}" min="1" onchange="updateMultiArte(${i}, 'num1', this.value)" style="height:32px;">
+            <div style="flex:2">
+                <label style="font-size:0.75rem; color:var(--text-dim); display:block; margin-bottom:4px;">Numeração 1</label>
+                <select class="form-control" style="height:32px; padding:0 5px;" onchange="updateMultiArte(${i}, 'num1_id', this.value)">
+                    ${numOptions.replace(`value="${a.num1_id}"`, `value="${a.num1_id}" selected`)}
+                </select>
             </div>
-            <div style="flex:1">
-                <label style="font-size:0.75rem; color:var(--text-dim); display:block; margin-bottom:4px;">Num2 (Ini)</label>
-                <input type="number" class="form-control" value="${a.num2}" min="1" onchange="updateMultiArte(${i}, 'num2', this.value)" style="height:32px;">
+            <div style="flex:2">
+                <label style="font-size:0.75rem; color:var(--text-dim); display:block; margin-bottom:4px;">Numeração 2</label>
+                <select class="form-control" style="height:32px; padding:0 5px;" onchange="updateMultiArte(${i}, 'num2_id', this.value)">
+                    ${numOptions.replace(`value="${a.num2_id}"`, `value="${a.num2_id}" selected`)}
+                </select>
             </div>
             <button class="btn btn-outline" style="color:var(--red); border-color:var(--red); height:32px; padding:0 10px; margin-top:20px;" onclick="removeMultiArte(${i})" title="Remover">X</button>
         </div>
@@ -2837,6 +2870,17 @@ window.runImposition = async function () {
     const num2Id = document.getElementById('imp-numeracao-2')?.value || '';
     const num2 = state.numeracoes.find(n => n.id === num2Id) || null;
 
+    let payloadMultiArtes = [];
+    if (schema === 'multi_artes') {
+        payloadMultiArtes = state.impMultiArtes.map(arte => {
+            return {
+                ...arte,
+                numeracao: state.numeracoes.find(n => n.id === arte.num1_id) || null,
+                numeracao_2: state.numeracoes.find(n => n.id === arte.num2_id) || null
+            };
+        });
+    }
+
     const payload = {
         formato_id: fmtId,
         numeracao_id: numId || null,
@@ -2851,7 +2895,7 @@ window.runImposition = async function () {
         seq_increment: 1,
         schema,
         print_mode: state.printMode,
-        multi_artes: schema === 'multi_artes' ? state.impMultiArtes : []
+        multi_artes: payloadMultiArtes
     };
 
     const formData = new FormData();

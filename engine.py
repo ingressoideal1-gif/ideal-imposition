@@ -392,18 +392,64 @@ class ImpositionEngine:
 
         # Preparar mapa de Multi-Artes
         multi_map = []
+        pdf_cache = {}
+
         if cfg.layout_schema == "multi_artes":
             sorted_artes = sorted(cfg.multi_artes, key=lambda a: int(a.get("qtd", 0)), reverse=True)
+            
+            def parse_elements(num_obj, source_id):
+                els = []
+                if num_obj and "elements" in num_obj:
+                    for el in num_obj["elements"]:
+                        e = dict(el)
+                        e["_x"] = e.get("x_mm", 0) * MM2PT
+                        e["_y"] = e.get("y_mm", 0) * MM2PT
+                        if "size_mm" in e: e["_size"] = e["size_mm"] * MM2PT
+                        if "width_mm" in e and e["type"] == "BARCODE":
+                            e["_w"] = e["width_mm"] * MM2PT
+                            e["_h"] = e.get("height_mm", 10) * MM2PT
+                        if "width_mm" in e and e["type"] == "SVG":
+                            e["width_mm"] = e["width_mm"]
+                            e["height_mm"] = e.get("height_mm", 20)
+                        e["face"] = el.get("face", "both")
+                        e["_num_source"] = source_id
+                        els.append(e)
+                return els
+
+            import urllib.request
+            def load_pdf_from_url(url):
+                if url in pdf_cache:
+                    return pdf_cache[url]
+                try:
+                    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                    with urllib.request.urlopen(req) as response:
+                        pdf_bytes = response.read()
+                        doc = fitz.open("pdf", pdf_bytes)
+                        pdf_cache[url] = doc
+                        return doc
+                except Exception as e:
+                    print(f"Erro ao baixar PDF da arte: {e}")
+                    return None
+
             for art in sorted_artes:
                 qtd = int(art.get("qtd", 0))
-                n1 = int(art.get("num1", 1))
-                n2 = int(art.get("num2", 1))
-                nome = art.get("nome", "")
-                fsize = int(art.get("fontSize", 10))
+                num1_obj = art.get("numeracao")
+                num2_obj = art.get("numeracao_2")
+                
+                n1 = int(num1_obj.get("start", 1)) if num1_obj else 1
+                n2 = int(num2_obj.get("start", 1)) if num2_obj else 1
+                
+                els1 = parse_elements(num1_obj, 1)
+                els2 = parse_elements(num2_obj, 2)
+                art_els = els1 + els2
+                
+                pdf_url = art.get("pdf_url")
+                art_doc = load_pdf_from_url(pdf_url) if pdf_url else None
+
                 for i in range(qtd):
                     multi_map.append({
-                        "nome": nome,
-                        "fsize": fsize,
+                        "doc_base": art_doc,
+                        "elements": art_els,
                         "val1": n1 + i,
                         "val2": n2 + i
                     })
@@ -431,15 +477,35 @@ class ImpositionEngine:
                     if item_index >= cfg.total_items:
                         continue
 
-                    # Determinar o índice da página do PDF base para a Frente
+                    # Determinar a página do PDF base e elementos para a Frente
+                    current_doc_base = doc_base
+                    current_elements = cfg.elements
+                    val = cfg.seq_start + (item_index * cfg.seq_increment)
+                    val2 = val
+                    arte_nome = ""
+                    arte_fsize = 10
+
+                    if cfg.layout_schema == "multi_artes" and item_index < len(multi_map):
+                        arte_data = multi_map[item_index]
+                        if arte_data["doc_base"]:
+                            current_doc_base = arte_data["doc_base"]
+                        current_elements = arte_data["elements"]
+                        val = arte_data["val1"]
+                        val2 = arte_data["val2"]
+                        # arte_nome = arte_data.get("nome", "") # Nome was removed from multi_artes!
+
                     if cfg.layout_schema == "pdf_multiple":
-                        page_idx_front = (item_index * 2) if (item_index * 2) < len(doc_base) else 0
+                        page_idx_front = (item_index * 2) if current_doc_base and (item_index * 2) < len(current_doc_base) else 0
                     else:
                         page_idx_front = 0
 
-                    page_base = doc_base[page_idx_front]
-                    base_w = page_base.rect.width
-                    base_h = page_base.rect.height
+                    if current_doc_base:
+                        page_base = current_doc_base[page_idx_front]
+                        base_w = page_base.rect.width
+                        base_h = page_base.rect.height
+                    else:
+                        base_w = cfg.item_w
+                        base_h = cfg.item_h
 
                     # Posição da célula final
                     cell_x0 = start_x + col * (cfg.item_w + cfg.gap_h)
@@ -461,35 +527,12 @@ class ImpositionEngine:
                     rect_art_temp = fitz.Rect(art_temp_x0, art_temp_y0, art_temp_x1, art_temp_y1)
 
                     # Inserir arte na página temporária
-                    temp_page.show_pdf_page(rect_art_temp, doc_base, page_idx_front, clip=page_base.rect)
+                    if current_doc_base:
+                        temp_page.show_pdf_page(rect_art_temp, current_doc_base, page_idx_front, clip=page_base.rect)
 
-                    # Renderizar VDP na página temporária
-                    val = cfg.seq_start + (item_index * cfg.seq_increment)
-                    val2 = val
-                    arte_nome = ""
-                    arte_fsize = 10
                     csv_row = cfg.csv_data[item_index] if cfg.csv_data else None
 
-                    if cfg.layout_schema == "multi_artes" and item_index < len(multi_map):
-                        arte_data = multi_map[item_index]
-                        val = arte_data["val1"]
-                        val2 = arte_data["val2"]
-                        arte_nome = arte_data["nome"]
-                        arte_fsize = arte_data["fsize"]
-
-                    # Desenhar nome da arte no topo da célula, se houver
-                    if arte_nome:
-                        rect_title = fitz.Rect(0, 0, cfg.item_w, arte_fsize + 10)
-                        temp_page.insert_textbox(
-                            rect_title,
-                            str(arte_nome),
-                            fontsize=arte_fsize,
-                            fontname="helv",
-                            align=1, # 0=left, 1=center, 2=right
-                            color=(0, 0, 0)
-                        )
-
-                    for el in cfg.elements:
+                    for el in current_elements:
                         # Filtrar elementos que são apenas para verso
                         if el.get("face", "both") == "back":
                             continue
@@ -550,11 +593,27 @@ class ImpositionEngine:
                         # Para o verso, a coluna física é espelhada horizontalmente
                         col_verso = cols - 1 - col
                         
+                        current_doc_base = doc_base
+                        current_elements = cfg.elements
+                        val = cfg.seq_start + (item_index * cfg.seq_increment)
+                        val2 = val
+                        arte_nome = ""
+                        arte_fsize = 10
+
+                        if cfg.layout_schema == "multi_artes" and item_index < len(multi_map):
+                            arte_data = multi_map[item_index]
+                            if arte_data["doc_base"]:
+                                current_doc_base = arte_data["doc_base"]
+                            current_elements = arte_data["elements"]
+                            val = arte_data["val1"]
+                            val2 = arte_data["val2"]
+                            # arte_nome = arte_data.get("nome", "")
+
                         # Determinar a página base de verso no PDF de entrada
                         if cfg.layout_schema == "pdf_multiple":
-                            page_idx_back = (item_index * 2 + 1) if (item_index * 2 + 1) < len(doc_base) else None
+                            page_idx_back = (item_index * 2 + 1) if current_doc_base and (item_index * 2 + 1) < len(current_doc_base) else None
                         else:
-                            page_idx_back = 1 if len(doc_base) >= 2 else None
+                            page_idx_back = 1 if current_doc_base and len(current_doc_base) >= 2 else None
 
                         # Posição física da célula de verso na folha final
                         cell_x0 = start_x + col_verso * (cfg.item_w + cfg.gap_h)
@@ -569,8 +628,8 @@ class ImpositionEngine:
                         temp_doc = fitz.open()
                         temp_page = temp_doc.new_page(width=cfg.item_w, height=cfg.item_h)
 
-                        if page_idx_back is not None:
-                            page_base_v = doc_base[page_idx_back]
+                        if page_idx_back is not None and current_doc_base:
+                            page_base_v = current_doc_base[page_idx_back]
                             base_w_verso = page_base_v.rect.width
                             base_h_verso = page_base_v.rect.height
 
@@ -582,23 +641,23 @@ class ImpositionEngine:
                             rect_art_temp = fitz.Rect(art_temp_x0, art_temp_y0, art_temp_x1, art_temp_y1)
 
                             # Inserir arte na página temporária
-                            temp_page.show_pdf_page(rect_art_temp, doc_base, page_idx_back, clip=page_base_v.rect)
+                            temp_page.show_pdf_page(rect_art_temp, current_doc_base, page_idx_back, clip=page_base_v.rect)
 
-                        # Renderizar VDP na página temporária
-                        val = cfg.seq_start + (item_index * cfg.seq_increment)
-                        val2 = val
-                        arte_nome = ""
-                        arte_fsize = 10
                         csv_row = cfg.csv_data[item_index] if cfg.csv_data else None
 
-                        if cfg.layout_schema == "multi_artes" and item_index < len(multi_map):
-                            arte_data = multi_map[item_index]
-                            val = arte_data["val1"]
-                            val2 = arte_data["val2"]
-                            arte_nome = arte_data["nome"]
-                            arte_fsize = arte_data["fsize"]
+                        # Desenhar nome da arte no topo da célula, se houver
+                        if arte_nome:
+                            rect_title = fitz.Rect(0, 0, cfg.item_w, arte_fsize + 10)
+                            temp_page.insert_textbox(
+                                rect_title,
+                                str(arte_nome),
+                                fontsize=arte_fsize,
+                                fontname="helv",
+                                align=1, # 0=left, 1=center, 2=right
+                                color=(0, 0, 0)
+                            )
 
-                        for el in cfg.elements:
+                        for el in current_elements:
                             # Filtrar elementos que são apenas para frente
                             if el.get("face", "both") == "front":
                                 continue

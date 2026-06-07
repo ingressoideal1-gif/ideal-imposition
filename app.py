@@ -244,7 +244,7 @@ def delete_cor(cor_id: str, user: dict = Depends(get_current_user)):
 
 @app.post("/api/impose")
 async def impose_file(
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(None),
     csv_file: UploadFile | None = File(None),
     payload: str = Form(...),
     user: dict = Depends(get_current_user)
@@ -280,16 +280,24 @@ async def impose_file(
             csv_data = numeracao["csv_data"]
 
         # Detectar extensão do arquivo enviado
-        original_name = file.filename or "upload.pdf"
-        ext = os.path.splitext(original_name)[1].lower() or ".pdf"
-        if ext not in [".pdf", ".jpg", ".jpeg", ".png"]:
-            raise HTTPException(status_code=400, detail=f"Formato de arquivo não suportado: {ext}")
+        base_file_path = ""
+        if file:
+            original_name = file.filename or "upload.pdf"
+            ext = os.path.splitext(original_name)[1].lower() or ".pdf"
+            if ext not in [".pdf", ".jpg", ".jpeg", ".png"]:
+                raise HTTPException(status_code=400, detail=f"Formato de arquivo não suportado: {ext}")
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp_in:
-            shutil.copyfileobj(file.file, tmp_in)
-            base_file_path = tmp_in.name
+            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp_in:
+                shutil.copyfileobj(file.file, tmp_in)
+                base_file_path = tmp_in.name
+        elif data.get("schema") != "multi_artes":
+            raise HTTPException(status_code=400, detail="Arquivo principal não enviado.")
 
-        out_pdf_path = base_file_path.rsplit(".", 1)[0] + "_imposed.pdf"
+        if base_file_path:
+            out_pdf_path = base_file_path.rsplit(".", 1)[0] + "_imposed.pdf"
+        else:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_out:
+                out_pdf_path = tmp_out.name
 
         config = ImpositionConfig(
             base_file=base_file_path,
