@@ -2557,6 +2557,8 @@ window.toggleMultiArtes = function() {
         if (startInput) startInput.parentElement.style.display = 'none';
         if (endInput) endInput.parentElement.style.display = 'none';
         if (dropArea) dropArea.style.display = 'none';
+        const impInfo = document.getElementById('imp-file-info');
+        if (impInfo) impInfo.style.display = 'none';
         if (num1Select) num1Select.parentElement.style.display = 'none';
         if (num2Select) num2Select.parentElement.style.display = 'none';
         
@@ -2569,6 +2571,8 @@ window.toggleMultiArtes = function() {
         if (startInput) startInput.parentElement.style.display = 'block';
         if (endInput) endInput.parentElement.style.display = 'block';
         if (dropArea) dropArea.style.display = 'flex'; // it's a flex container
+        const impInfo = document.getElementById('imp-file-info');
+        if (impInfo && impFile.files.length) impInfo.style.display = 'block';
         if (num1Select) num1Select.parentElement.style.display = 'block';
         if (num2Select) num2Select.parentElement.style.display = 'block';
     }
@@ -2869,7 +2873,17 @@ window.runImposition = async function () {
 
     if (!fmtId) return toast('Selecione um Formato.', 'error');
     if (!saiId) return toast('Selecione uma Saída.', 'error');
-    if (!impFile.files.length) return toast('Selecione a arte (PDF/JPG/PNG).', 'error');
+    
+    if (schema === 'multi_artes') {
+        // Valida se todas as artes da lista têm PDF carregado
+        for (let i = 0; i < state.impMultiArtes.length; i++) {
+            if (!state.impMultiArtes[i].pdf_url) {
+                return toast(`Por favor, faça o upload do PDF para a Arte ${i + 1}.`, 'error');
+            }
+        }
+    } else {
+        if (!impFile.files.length) return toast('Selecione a arte (PDF/JPG/PNG).', 'error');
+    }
     
     if (schema !== 'multi_artes' && schema !== 'pdf_multiple') {
         if (start > end) return toast('Número inicial deve ser menor que o final.', 'error');
@@ -2911,7 +2925,9 @@ window.runImposition = async function () {
     };
 
     const formData = new FormData();
-    formData.append('file', impFile.files[0]);
+    if (impFile.files && impFile.files.length > 0) {
+        formData.append('file', impFile.files[0]);
+    }
     if (state.csvFile) {
         formData.append('csv_file', state.csvFile);
     }
