@@ -309,10 +309,14 @@ class ImpositionEngine:
                 h_pt = el.get("height_mm", 20) * MM2PT
                 rect = fitz.Rect(el_x, el_y, el_x + w_pt, el_y + h_pt)
                 try:
-                    svg_doc = fitz.open(stream=svg_content.encode("utf-8"), filetype="svg")
-                    pdf_bytes = svg_doc.convert_to_pdf()
+                    import io
+                    from svglib.svglib import svg2rlg
+                    from reportlab.graphics import renderPDF
+                    
+                    drawing = svg2rlg(io.StringIO(svg_content))
+                    pdf_bytes = renderPDF.drawToString(drawing)
                     pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-                    page.show_pdf_page(rect, pdf_doc, 0, keep_proportion=False, rotate=angle)
+                    page.show_pdf_page(rect, pdf_doc, 0, keep_proportion=True, rotate=angle)
                 except Exception as ex:
                     print(f"Erro ao impor SVG: {ex}")
 
@@ -325,9 +329,13 @@ class ImpositionEngine:
                 try:
                     pdf_bytes = base64.b64decode(pdf_content)
                     pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-                    # Render at 100% scale
-                    w_pt = pdf_doc[0].rect.width
-                    h_pt = pdf_doc[0].rect.height
+                    w_mm = el.get("width_mm")
+                    if w_mm is not None:
+                        w_pt = w_mm * MM2PT
+                        h_pt = el.get("height_mm") * MM2PT
+                    else:
+                        w_pt = pdf_doc[0].rect.width
+                        h_pt = pdf_doc[0].rect.height
                     rect = fitz.Rect(el_x, el_y, el_x + w_pt, el_y + h_pt)
                     page.show_pdf_page(rect, pdf_doc, 0, keep_proportion=True, rotate=angle)
                 except Exception as ex:

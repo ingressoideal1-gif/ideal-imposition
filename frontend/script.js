@@ -901,6 +901,17 @@ function editNumeracao(id) {
         window.clearNumSvgFile();
     }
 
+    state.numPdfFilename = n.pdf_filename || "";
+    state.numPdfContent = n.pdf_content || "";
+    if (state.numPdfContent) {
+        const btn = document.getElementById('btn-remove-num-pdf');
+        const name = document.getElementById('num-pdf-file-name');
+        if (btn) btn.style.display = 'inline-flex';
+        if (name) name.textContent = '📎 ' + state.numPdfFilename;
+    } else {
+        if (window.clearNumPdfFile) window.clearNumPdfFile();
+    }
+
     onFormatoSelect(false);
     renderElementsList();
     drawCanvas();
@@ -950,6 +961,7 @@ function cancelNumEdit() {
     document.getElementById('numeracao-editor').style.display = 'none';
     clearNumCsvFile();
     window.clearNumSvgFile();
+    if (window.clearNumPdfFile) window.clearNumPdfFile();
 }
 window.cancelNumEdit = cancelNumEdit;
 
@@ -1206,11 +1218,13 @@ function drawElement(ctx, el, S) {
         ctx.lineTo(0, h_px - y);
         ctx.stroke();
         ctx.setLineDash([]);
-    } else if (el.type === 'SVG') {
+    } else if (el.type === 'SVG' || el.type === 'PDF') {
         const w = (el.width_mm || 20) * S;
         const h = (el.height_mm || 20) * S;
-        if (state.numSvgImage) {
-            ctx.drawImage(state.numSvgImage, 0, 0, w, h);
+        const imgObj = el.type === 'SVG' ? state.numSvgImage : state.numPdfImage;
+        const title = el.type === 'SVG' ? 'SVG' : 'PDF';
+        if (imgObj) {
+            ctx.drawImage(imgObj, 0, 0, w, h);
         } else {
             ctx.strokeStyle = color;
             ctx.lineWidth = 1;
@@ -1218,7 +1232,7 @@ function drawElement(ctx, el, S) {
             ctx.font = `${Math.max(6, h * 0.15)}px Inter, sans-serif`;
             ctx.fillStyle = color;
             ctx.textAlign = 'center';
-            ctx.fillText('SVG (Sem arquivo)', w / 2, h / 2 + (h * 0.05));
+            ctx.fillText(title + ' (Sem arquivo)', w / 2, h / 2 + (h * 0.05));
             ctx.textAlign = 'left';
         }
         if (isSelected) {
@@ -1565,6 +1579,8 @@ window.clearNumSvgFile = function () {
     state.numSvgContent = null;
     state.numSvgFilename = "";
     state.numSvgImage = null;
+    state.numSvgOriginalW = null;
+    state.numSvgOriginalH = null;
     const btn = document.getElementById('btn-remove-num-svg');
     const name = document.getElementById('num-svg-file-name');
     const inp = document.getElementById('num-svg-file');
@@ -1584,6 +1600,9 @@ async function loadNumSvgFile(file) {
 
         state.numSvgImage = img;
         state.numSvgFilename = file.name;
+        // SVG resolution in browsers defaults to 96 DPI. Convert pixels to mm.
+        state.numSvgOriginalW = (img.width / 96) * 25.4;
+        state.numSvgOriginalH = (img.height / 96) * 25.4;
 
         const reader = new FileReader();
         reader.onload = e => {
@@ -1603,6 +1622,66 @@ async function loadNumSvgFile(file) {
     }
 }
 
+window.clearNumPdfFile = function () {
+    state.numPdfContent = null;
+    state.numPdfFilename = "";
+    state.numPdfImage = null;
+    state.numPdfOriginalW = null;
+    state.numPdfOriginalH = null;
+    const btn = document.getElementById('btn-remove-num-pdf');
+    const name = document.getElementById('num-pdf-file-name');
+    const inp = document.getElementById('num-pdf-file');
+    if (btn) btn.style.display = 'none';
+    if (name) name.textContent = '';
+    if (inp) inp.value = '';
+    drawCanvas();
+};
+
+async function loadNumPdfFile(file) {
+    try {
+        state.numPdfFilename = file.name;
+        
+        if (typeof pdfjsLib !== 'undefined') {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            const page = await pdf.getPage(1);
+            
+            const vpRender = page.getViewport({ scale: 2 });
+            const off = document.createElement('canvas');
+            const octx = off.getContext('2d');
+            off.width = Math.round(vpRender.width);
+            off.height = Math.round(vpRender.height);
+            await page.render({ canvasContext: octx, viewport: vpRender }).promise;
+            
+            const img = new Image();
+            img.src = off.toDataURL('image/png');
+            await new Promise(r => img.onload = r);
+            state.numPdfImage = img;
+            
+            const vpOrig = page.getViewport({ scale: 1 });
+            const ptToMm = 25.4 / 72;
+            state.numPdfOriginalW = vpOrig.width * ptToMm;
+            state.numPdfOriginalH = vpOrig.height * ptToMm;
+        }
+
+        const reader = new FileReader();
+        reader.onload = e => {
+            state.numPdfContent = e.target.result;
+            drawCanvas();
+        };
+        reader.readAsDataURL(file);
+
+        const btn = document.getElementById('btn-remove-num-pdf');
+        const name = document.getElementById('num-pdf-file-name');
+        if (btn) btn.style.display = 'inline-flex';
+        if (name) name.textContent = '📎 ' + file.name;
+
+        toast('Arquivo PDF carregado com sucesso!', 'success');
+    } catch (err) {
+        toast('Erro ao processar PDF: ' + err.message, 'error');
+    }
+}
+
 // Listeners dos inputs de arquivo (configurados uma única vez após DOM pronto)
 document.addEventListener('DOMContentLoaded', () => {
     const bgInp = document.getElementById('canvas-bg-file');
@@ -1613,6 +1692,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const svgInp = document.getElementById('num-svg-file');
     if (svgInp) svgInp.addEventListener('change', e => {
         if (e.target.files[0]) loadNumSvgFile(e.target.files[0]);
+    });
+
+    const pdfInp = document.getElementById('num-pdf-file');
+    if (pdfInp) pdfInp.addEventListener('change', e => {
+        if (e.target.files[0]) loadNumPdfFile(e.target.files[0]);
     });
 });
 
@@ -1653,8 +1737,8 @@ window.addElement = function (type) {
     if (type === 'FIXED') Object.assign(base, { font_size: 12, font_name: 'helv', fixed: true, fixed_value: 'Texto' });
     if (type === 'QR') Object.assign(base, { size_mm: 15, pad: 4, prefix: '', suffix: '' });
     if (type === 'BARCODE') Object.assign(base, { width_mm: 40, height_mm: 10, barcode_format: 'code128', pad: 4, prefix: '', suffix: '' });
-    if (type === 'SVG') Object.assign(base, { width_mm: 20, height_mm: 20, svg_content: state.numSvgContent || '' });
-    if (type === 'PDF') Object.assign(base, { pdf_content: state.numPdfContent || '' });
+    if (type === 'SVG') Object.assign(base, { width_mm: state.numSvgOriginalW || 20, height_mm: state.numSvgOriginalH || 20, svg_content: state.numSvgContent || '' });
+    if (type === 'PDF') Object.assign(base, { width_mm: state.numPdfOriginalW || 20, height_mm: state.numPdfOriginalH || 20, pdf_content: state.numPdfContent || '' });
     if (type === 'PICOTE') Object.assign(base, { name: 'Picote' });
 
     state.numElements.push(base);
@@ -1932,10 +2016,13 @@ window.saveNumeracao = async function () {
         csv_data: state.numCsvData || null,
         svg_content: state.numSvgContent || "",
         svg_filename: state.numSvgFilename || "",
+        pdf_content: state.numPdfContent || "",
+        pdf_filename: state.numPdfFilename || "",
         elements: state.numElements.map(el => {
             const e = { ...el };
             if (e.type === 'FIXED') e.fixed = true;
             if (e.type === 'SVG') e.svg_content = state.numSvgContent || "";
+            if (e.type === 'PDF') e.pdf_content = state.numPdfContent || "";
             return e;
         })
     };
