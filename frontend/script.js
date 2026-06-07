@@ -2004,10 +2004,12 @@ function deselectAllCards() {
 async function uploadToStorage(content, fileName, path) {
     if (!content) return content;
     if (!storageFirebase) return content;
-    if (content.startsWith('http')) return content; // Already a URL
+    if (typeof content === 'string' && content.startsWith('http')) return content; // Already a URL
 
     let blob;
-    if (content.startsWith('data:')) {
+    if (content instanceof File || content instanceof Blob) {
+        blob = content;
+    } else if (typeof content === 'string' && content.startsWith('data:')) {
         const res = await fetch(content);
         blob = await res.blob();
     } else {
@@ -2546,11 +2548,18 @@ window.toggleMultiArtes = function() {
     const container = document.getElementById('multi-artes-container');
     const startInput = document.getElementById('imp-start');
     const endInput = document.getElementById('imp-end');
+    const dropArea = document.getElementById('imp-drop-area');
+    const num1Select = document.getElementById('imp-numeracao');
+    const num2Select = document.getElementById('imp-numeracao-2');
 
     if (isMulti) {
         container.style.display = 'block';
         if (startInput) startInput.parentElement.style.display = 'none';
         if (endInput) endInput.parentElement.style.display = 'none';
+        if (dropArea) dropArea.style.display = 'none';
+        if (num1Select) num1Select.parentElement.style.display = 'none';
+        if (num2Select) num2Select.parentElement.style.display = 'none';
+        
         if (state.impMultiArtes.length === 0) {
             addMultiArte(); // Add initial
         }
@@ -2559,6 +2568,9 @@ window.toggleMultiArtes = function() {
         container.style.display = 'none';
         if (startInput) startInput.parentElement.style.display = 'block';
         if (endInput) endInput.parentElement.style.display = 'block';
+        if (dropArea) dropArea.style.display = 'flex'; // it's a flex container
+        if (num1Select) num1Select.parentElement.style.display = 'block';
+        if (num2Select) num2Select.parentElement.style.display = 'block';
     }
 };
 
