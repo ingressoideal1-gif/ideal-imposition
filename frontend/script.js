@@ -2314,19 +2314,19 @@ function drawPreview() {
                 ctx.fillText(`Posi√ß√£o ${P + 1}`, 0, 0);
             }
 
-            // Elementos vari·veis (VDP) - Suporte a 2 numeraÁıes sobrepostas
+            // Elementos vari√°veis (VDP) - Suporte a 2 numera√ß√µes sobrepostas
         const drawVdpElements = (currentNum) => {
             if (currentNum && currentNum.elements) {
                 const val = start + item_index;
                 currentNum.elements.forEach(el => {
-                    // Pular elementos que n„o s„o da face ativa
+                    // Pular elementos que n√£o s√£o da face ativa
                     if (isBack && el.face === 'front') return;
                     if (!isBack && el.face === 'back') return;
-                    // PosiÁ„o do elemento relativa ao canto superior esquerdo da cÈlula
+                    // Posi√ß√£o do elemento relativa ao canto superior esquerdo da c√©lula
                     const el_x = el.x_mm * MM2PT * scale;
                     const el_y = el.y_mm * MM2PT * scale;
 
-                    // Converter para coordenadas relativas ao centro da cÈlula (0,0)
+                    // Converter para coordenadas relativas ao centro da c√©lula (0,0)
                     const el_x_rel = el_x - cw / 2;
                     const el_y_rel = el_y - ch / 2;
 
