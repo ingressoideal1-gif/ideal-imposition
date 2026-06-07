@@ -1633,6 +1633,14 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         svgInp._listenerSet = true;
     }
+
+    const pdfInp = document.getElementById('num-pdf-file');
+    if (pdfInp && !pdfInp._listenerSet) {
+        pdfInp.addEventListener('change', e => {
+            if (e.target.files[0]) loadNumPdfFile(e.target.files[0]);
+        });
+        pdfInp._listenerSet = true;
+    }
 })();
 
 // ─── ELEMENTOS VDP ────────────────────────────────────────────────────────────
@@ -1646,6 +1654,7 @@ window.addElement = function (type) {
     if (type === 'QR') Object.assign(base, { size_mm: 15, pad: 4, prefix: '', suffix: '' });
     if (type === 'BARCODE') Object.assign(base, { width_mm: 40, height_mm: 10, barcode_format: 'code128', pad: 4, prefix: '', suffix: '' });
     if (type === 'SVG') Object.assign(base, { width_mm: 20, height_mm: 20, svg_content: state.numSvgContent || '' });
+    if (type === 'PDF') Object.assign(base, { pdf_content: state.numPdfContent || '' });
     if (type === 'PICOTE') Object.assign(base, { name: 'Picote' });
 
     state.numElements.push(base);
@@ -1673,7 +1682,7 @@ function renderElementsList() {
     }
 
     const typeLabel = { TEXT: '🔤 Numeração', FIXED: '🔠 Texto Fixo', QR: '📱 QR Code', BARCODE: '▌▌ Barcode', SVG: '🎨 SVG', PICOTE: '✂️ Picote' };
-    const typeBadge = { TEXT: 'badge-blue', FIXED: 'badge-amber', QR: 'badge-teal', BARCODE: 'badge-purple', SVG: 'badge-green', PICOTE: 'badge-danger' };
+    const typeBadge = { TEXT: 'badge-blue', FIXED: 'badge-amber', QR: 'badge-teal', BARCODE: 'badge-purple', SVG: 'badge-green', PICOTE: 'badge-danger', PDF: 'badge-gray' };
 
     container.innerHTML = state.numElements.map(el => {
         const isSelected = isElSelected(el.id);

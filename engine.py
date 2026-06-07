@@ -316,6 +316,23 @@ class ImpositionEngine:
                 except Exception as ex:
                     print(f"Erro ao impor SVG: {ex}")
 
+        elif t == "PDF":
+            pdf_content = el.get("pdf_content") or ""
+            if pdf_content:
+                import base64
+                if pdf_content.startswith("data:"):
+                    pdf_content = pdf_content.split(",", 1)[-1]
+                try:
+                    pdf_bytes = base64.b64decode(pdf_content)
+                    pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+                    # Render at 100% scale
+                    w_pt = pdf_doc[0].rect.width
+                    h_pt = pdf_doc[0].rect.height
+                    rect = fitz.Rect(el_x, el_y, el_x + w_pt, el_y + h_pt)
+                    page.show_pdf_page(rect, pdf_doc, 0, keep_proportion=True, rotate=angle)
+                except Exception as ex:
+                    print(f"Erro ao impor PDF: {ex}")
+
     def process(self):
         cfg = self.cfg
         cols = cfg.cols
