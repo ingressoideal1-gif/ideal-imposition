@@ -697,11 +697,12 @@
                                 </div>
                                 <div class="form-group">
                                     <label>Regra de Paginação</label>
-                                    <select class="form-control" id="imp-schema" onchange="updateImpSummary()">
+                                    <select class="form-control" id="imp-schema" onchange="updateImpSummary(); toggleMultiArtes();">
                                         <option value="sequential">Sequencial</option>
                                         <option value="cut_stack">Cut &amp; Stack (Blocos)</option>
                                         <option value="step_repeat">Step &amp; Repeat</option>
                                         <option value="pdf_multiple">Pdf Paginado</option>
+                                        <option value="multi_artes">Multi-Artes (Colunas)</option>
                                     </select>
                                 </div>
                                 <div class="form-group">
@@ -710,6 +711,20 @@
                                         <option value="front" selected>Apenas Frente</option>
                                         <option value="duplex">Frente e Verso</option>
                                     </select>
+                                </div>
+                            </div>
+
+                            <!-- Configuração Multi-Artes -->
+                            <div id="multi-artes-container" style="display:none; margin-bottom: 20px; padding: 15px; border: 1px dashed var(--border-color); border-radius: 8px; background: rgba(0,0,0,0.02);">
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                                    <h4 style="margin:0; font-size:1.1rem; color:var(--text-color);">Configuração de Artes</h4>
+                                    <button class="btn btn-outline" onclick="addMultiArte()" title="Adicionar Arte">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                        Adicionar Arte
+                                    </button>
+                                </div>
+                                <div id="multi-artes-list" style="display:flex; flex-direction:column; gap:10px;">
+                                    <!-- Itens adicionados dinamicamente -->
                                 </div>
                             </div>
 

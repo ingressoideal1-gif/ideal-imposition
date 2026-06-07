@@ -303,7 +303,8 @@ async def impose_file(
             layout_schema=data.get("schema", "sequential"),
             csv_data=csv_data,
             print_mode=data.get("print_mode", "front"),
-            numeracao_2=numeracao_2
+            numeracao_2=numeracao_2,
+            multi_artes=data.get("multi_artes", [])
         )
 
         engine = ImpositionEngine(config)

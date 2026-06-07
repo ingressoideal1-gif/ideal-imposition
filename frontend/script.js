@@ -41,6 +41,7 @@ const state = {
     dragging: null,         // { targets, downX, downY }
     canvasScale: 3,         // px por mm (default)
     bgImage: null,          // HTMLImageElement | null (arte de fundo no canvas)
+    impMultiArtes: [],      // array of arts for multi_artes pagination
 
     // Preview de Imposição
     impArtImage: null,
@@ -2539,6 +2540,88 @@ function drawPreview() {
     ctx.strokeRect(0, 0, canvas.width, canvas.height);
 }
 
+}
+
+window.toggleMultiArtes = function() {
+    const schema = document.getElementById('imp-schema').value;
+    const isMulti = schema === 'multi_artes';
+    const container = document.getElementById('multi-artes-container');
+    const startInput = document.getElementById('imp-start');
+    const endInput = document.getElementById('imp-end');
+
+    if (isMulti) {
+        container.style.display = 'block';
+        if (startInput) startInput.parentElement.style.display = 'none';
+        if (endInput) endInput.parentElement.style.display = 'none';
+        if (state.impMultiArtes.length === 0) {
+            addMultiArte(); // Add initial
+        }
+        renderMultiArtes();
+    } else {
+        container.style.display = 'none';
+        if (startInput) startInput.parentElement.style.display = 'block';
+        if (endInput) endInput.parentElement.style.display = 'block';
+    }
+};
+
+window.addMultiArte = function() {
+    state.impMultiArtes.push({
+        nome: `Arte ${state.impMultiArtes.length + 1}`,
+        fontSize: 10,
+        qtd: 100,
+        num1: 1,
+        num2: 1
+    });
+    renderMultiArtes();
+    updateImpSummary();
+};
+
+window.removeMultiArte = function(index) {
+    if (state.impMultiArtes.length <= 1) return toast('Precisa de pelo menos 1 arte.', 'error');
+    state.impMultiArtes.splice(index, 1);
+    renderMultiArtes();
+    updateImpSummary();
+};
+
+window.updateMultiArte = function(index, field, value) {
+    if (field === 'qtd' || field === 'num1' || field === 'num2' || field === 'fontSize') {
+        value = parseInt(value) || 0;
+    }
+    state.impMultiArtes[index][field] = value;
+    if (field === 'qtd') updateImpSummary();
+};
+
+window.renderMultiArtes = function() {
+    const list = document.getElementById('multi-artes-list');
+    if (!list) return;
+
+    list.innerHTML = state.impMultiArtes.map((a, i) => `
+        <div style="display:flex; gap:10px; align-items:center; background:var(--bg-color); padding:10px; border-radius:6px; border:1px solid var(--border-color);">
+            <div style="flex:2">
+                <label style="font-size:0.75rem; color:var(--text-dim); display:block; margin-bottom:4px;">Nome impresso</label>
+                <input type="text" class="form-control" value="${a.nome}" onchange="updateMultiArte(${i}, 'nome', this.value)" style="height:32px;">
+            </div>
+            <div style="flex:1">
+                <label style="font-size:0.75rem; color:var(--text-dim); display:block; margin-bottom:4px;">Tamanho (pt)</label>
+                <input type="number" class="form-control" value="${a.fontSize}" min="1" onchange="updateMultiArte(${i}, 'fontSize', this.value)" style="height:32px;">
+            </div>
+            <div style="flex:1">
+                <label style="font-size:0.75rem; color:var(--text-dim); display:block; margin-bottom:4px;">Qtd (un)</label>
+                <input type="number" class="form-control" value="${a.qtd}" min="1" oninput="updateMultiArte(${i}, 'qtd', this.value)" style="height:32px; border-color:var(--blue);">
+            </div>
+            <div style="flex:1">
+                <label style="font-size:0.75rem; color:var(--text-dim); display:block; margin-bottom:4px;">Num1 (Ini)</label>
+                <input type="number" class="form-control" value="${a.num1}" min="1" onchange="updateMultiArte(${i}, 'num1', this.value)" style="height:32px;">
+            </div>
+            <div style="flex:1">
+                <label style="font-size:0.75rem; color:var(--text-dim); display:block; margin-bottom:4px;">Num2 (Ini)</label>
+                <input type="number" class="form-control" value="${a.num2}" min="1" onchange="updateMultiArte(${i}, 'num2', this.value)" style="height:32px;">
+            </div>
+            <button class="btn btn-outline" style="color:var(--red); border-color:var(--red); height:32px; padding:0 10px; margin-top:20px;" onclick="removeMultiArte(${i})" title="Remover">X</button>
+        </div>
+    `).join('');
+};
+
 function updateImpSummary() {
     const fmtSelect = document.getElementById('imp-formato');
     const numSelect = document.getElementById('imp-numeracao');
@@ -2669,6 +2752,9 @@ function updateImpSummary() {
     if (isPdfMultiple) {
         const totalPages = state.impArtPdfDoc ? state.impArtPdfDoc.numPages : 1;
         total = state.printMode === 'duplex' ? Math.ceil(totalPages / 2) : totalPages;
+    } else if (schema === 'multi_artes') {
+        total = state.impMultiArtes.reduce((acc, a) => acc + (parseInt(a.qtd) || 0), 0);
+        if (total < 1) total = 1;
     } else if (state.csvData) {
         total = state.csvData.length;
     } else {
@@ -2739,7 +2825,10 @@ window.runImposition = async function () {
     if (!fmtId) return toast('Selecione um Formato.', 'error');
     if (!saiId) return toast('Selecione uma Saída.', 'error');
     if (!impFile.files.length) return toast('Selecione a arte (PDF/JPG/PNG).', 'error');
-    if (start > end) return toast('Número inicial deve ser menor que o final.', 'error');
+    
+    if (schema !== 'multi_artes' && schema !== 'pdf_multiple') {
+        if (start > end) return toast('Número inicial deve ser menor que o final.', 'error');
+    }
 
     const formato = state.formatos.find(f => f.id === fmtId);
     const saida = state.saidas.find(s => s.id === saiId);
@@ -2761,7 +2850,8 @@ window.runImposition = async function () {
         seq_end: end,
         seq_increment: 1,
         schema,
-        print_mode: state.printMode
+        print_mode: state.printMode,
+        multi_artes: schema === 'multi_artes' ? state.impMultiArtes : []
     };
 
     const formData = new FormData();
@@ -2782,6 +2872,8 @@ window.runImposition = async function () {
     if (isPdfMultiple) {
         const totalPages = state.impArtPdfDoc ? state.impArtPdfDoc.numPages : 1;
         total = state.printMode === 'duplex' ? Math.ceil(totalPages / 2) : totalPages;
+    } else if (schema === 'multi_artes') {
+        total = state.impMultiArtes.reduce((acc, a) => acc + (parseInt(a.qtd) || 0), 0);
     } else if (state.csvData) {
         total = state.csvData.length;
     } else {

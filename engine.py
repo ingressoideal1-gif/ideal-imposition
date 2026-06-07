@@ -112,13 +112,15 @@ class ImpositionConfig:
                  layout_schema: str = "sequential",
                  csv_data: list[dict] | None = None,
                  print_mode: str = "front",
-                 numeracao_2: dict | None = None):
+                 numeracao_2: dict | None = None,
+                 multi_artes: list[dict] | None = None):
 
         self.base_file = base_file
         self.out_pdf = out_pdf
         self.saida = saida
         self.layout_schema = layout_schema
         self.print_mode = print_mode
+        self.multi_artes = multi_artes or []
 
         # Formato (tamanho do item + grade + gaps)
         self.item_w = formato["width_mm"] * MM2PT
@@ -158,6 +160,9 @@ class ImpositionConfig:
             except Exception as ex:
                 print(f"Erro ao contar paginas do PDF: {ex}")
                 self.total_items = 1
+        elif layout_schema == "multi_artes":
+            self.total_items = sum(int(a.get("qtd", 0)) for a in self.multi_artes)
+            if self.total_items < 1: self.total_items = 1
         elif csv_data:
             self.total_items = len(csv_data)
         else:
@@ -179,6 +184,7 @@ class ImpositionConfig:
                     e["_w"] = e["width_mm"] * MM2PT
                     e["_h"] = e.get("height_mm", 10) * MM2PT
                 e["face"] = el.get("face", "both")
+                e["_num_source"] = 1
                 self.elements.append(e)
 
         # Carregar numeração 2
@@ -194,8 +200,8 @@ class ImpositionConfig:
                     e["_w"] = e["width_mm"] * MM2PT
                     e["_h"] = e.get("height_mm", 10) * MM2PT
                 e["face"] = el.get("face", "both")
+                e["_num_source"] = 2
                 self.elements.append(e)
-
 
 class ImpositionEngine:
     def __init__(self, config: ImpositionConfig):
@@ -384,6 +390,24 @@ class ImpositionEngine:
         
         is_duplex = (cfg.print_mode == "duplex")
 
+        # Preparar mapa de Multi-Artes
+        multi_map = []
+        if cfg.layout_schema == "multi_artes":
+            sorted_artes = sorted(cfg.multi_artes, key=lambda a: int(a.get("qtd", 0)), reverse=True)
+            for art in sorted_artes:
+                qtd = int(art.get("qtd", 0))
+                n1 = int(art.get("num1", 1))
+                n2 = int(art.get("num2", 1))
+                nome = art.get("nome", "")
+                fsize = int(art.get("fontSize", 10))
+                for i in range(qtd):
+                    multi_map.append({
+                        "nome": nome,
+                        "fsize": fsize,
+                        "val1": n1 + i,
+                        "val2": n2 + i
+                    })
+
         for S in range(total_sheets):
             # 1. RENDERIZAR FRENTE DA FOLHA
             out_page_front = doc_out.new_page(width=cfg.sheet_w, height=cfg.sheet_h)
@@ -394,6 +418,9 @@ class ImpositionEngine:
 
                     if cfg.layout_schema == "cut_stack":
                         item_index = (P * total_sheets) + S
+                    elif cfg.layout_schema == "multi_artes":
+                        P_col_first = col * rows + row
+                        item_index = (P_col_first * total_sheets) + S
                     elif cfg.layout_schema == "sequential":
                         item_index = (S * poses_per_sheet) + P
                     elif cfg.layout_schema == "step_repeat":
@@ -438,7 +465,29 @@ class ImpositionEngine:
 
                     # Renderizar VDP na página temporária
                     val = cfg.seq_start + (item_index * cfg.seq_increment)
+                    val2 = val
+                    arte_nome = ""
+                    arte_fsize = 10
                     csv_row = cfg.csv_data[item_index] if cfg.csv_data else None
+
+                    if cfg.layout_schema == "multi_artes" and item_index < len(multi_map):
+                        arte_data = multi_map[item_index]
+                        val = arte_data["val1"]
+                        val2 = arte_data["val2"]
+                        arte_nome = arte_data["nome"]
+                        arte_fsize = arte_data["fsize"]
+
+                    # Desenhar nome da arte no topo da célula, se houver
+                    if arte_nome:
+                        rect_title = fitz.Rect(0, 0, cfg.item_w, arte_fsize + 10)
+                        temp_page.insert_textbox(
+                            rect_title,
+                            str(arte_nome),
+                            fontsize=arte_fsize,
+                            fontname="helv",
+                            align=1, # 0=left, 1=center, 2=right
+                            color=(0, 0, 0)
+                        )
 
                     for el in cfg.elements:
                         # Filtrar elementos que são apenas para verso
@@ -460,8 +509,10 @@ class ImpositionEngine:
                         if el["type"] in ("TEXT", "FIXED"):
                             rotated_el["font_size"] = el.get("font_size", 12)
 
+                        current_val = val if rotated_el.get("_num_source", 1) == 1 else val2
+
                         # Renderiza na página temporária usando coordenadas relativas diretas
-                        self._render_element(temp_page, rotated_el, 0, 0, val, csv_row)
+                        self._render_element(temp_page, rotated_el, 0, 0, current_val, csv_row)
 
                     # 2. Impor a página temporária completa (arte + VDP) na folha final, aplicando a rotação da célula
                     out_page_front.show_pdf_page(
@@ -483,6 +534,9 @@ class ImpositionEngine:
 
                         if cfg.layout_schema == "cut_stack":
                             item_index = (P * total_sheets) + S
+                        elif cfg.layout_schema == "multi_artes":
+                            P_col_first = col * rows + row
+                            item_index = (P_col_first * total_sheets) + S
                         elif cfg.layout_schema == "sequential":
                             item_index = (S * poses_per_sheet) + P
                         elif cfg.layout_schema == "step_repeat":
@@ -532,7 +586,17 @@ class ImpositionEngine:
 
                         # Renderizar VDP na página temporária
                         val = cfg.seq_start + (item_index * cfg.seq_increment)
+                        val2 = val
+                        arte_nome = ""
+                        arte_fsize = 10
                         csv_row = cfg.csv_data[item_index] if cfg.csv_data else None
+
+                        if cfg.layout_schema == "multi_artes" and item_index < len(multi_map):
+                            arte_data = multi_map[item_index]
+                            val = arte_data["val1"]
+                            val2 = arte_data["val2"]
+                            arte_nome = arte_data["nome"]
+                            arte_fsize = arte_data["fsize"]
 
                         for el in cfg.elements:
                             # Filtrar elementos que são apenas para frente
@@ -553,7 +617,9 @@ class ImpositionEngine:
                             if el["type"] in ("TEXT", "FIXED"):
                                 rotated_el["font_size"] = el.get("font_size", 12)
 
-                            self._render_element(temp_page, rotated_el, 0, 0, val, csv_row)
+                            current_val = val if rotated_el.get("_num_source", 1) == 1 else val2
+
+                            self._render_element(temp_page, rotated_el, 0, 0, current_val, csv_row)
 
                         # 2. Impor a página temporária de verso na folha final, aplicando a rotação correspondente
                         out_page_back.show_pdf_page(
