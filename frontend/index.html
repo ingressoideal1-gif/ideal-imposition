@@ -684,7 +684,7 @@
                                 </div>
                             </div>
 
-                            <div class="form-grid form-grid-4" style="margin-bottom:20px;">
+                            <div class="form-grid form-grid-5" style="margin-bottom:20px;">
                                 <div class="form-group">
                                     <label>Número Inicial</label>
                                     <input type="number" class="form-control" id="imp-start" value="1" min="1"
@@ -710,6 +710,13 @@
                                     <select class="form-control" id="imp-print-mode" onchange="updateImpSummary()">
                                         <option value="front" selected>Apenas Frente</option>
                                         <option value="duplex">Frente e Verso</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Rotacionar Página</label>
+                                    <select class="form-control" id="imp-rotate-page" onchange="updateImpSummary()">
+                                        <option value="false" selected>Sem Rotação</option>
+                                        <option value="true">Rotacionar 90°</option>
                                     </select>
                                 </div>
                             </div>

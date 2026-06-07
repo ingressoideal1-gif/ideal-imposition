@@ -312,6 +312,7 @@ async def impose_file(
             csv_data=csv_data,
             print_mode=data.get("print_mode", "front"),
             numeracao_2=numeracao_2,
+            rotate_page=data.get("rotate_page", False),
             multi_artes=data.get("multi_artes", [])
         )
 

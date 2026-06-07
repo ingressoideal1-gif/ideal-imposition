@@ -113,6 +113,7 @@ class ImpositionConfig:
                  csv_data: list[dict] | None = None,
                  print_mode: str = "front",
                  numeracao_2: dict | None = None,
+                 rotate_page: bool = False,
                  multi_artes: list[dict] | None = None):
 
         self.base_file = base_file
@@ -120,6 +121,7 @@ class ImpositionConfig:
         self.saida = saida
         self.layout_schema = layout_schema
         self.print_mode = print_mode
+        self.rotate_page = rotate_page
         self.multi_artes = multi_artes or []
 
         # Formato (tamanho do item + grade + gaps)
@@ -459,6 +461,8 @@ class ImpositionEngine:
         for S in range(total_sheets):
             # 1. RENDERIZAR FRENTE DA FOLHA
             out_page_front = doc_out.new_page(width=cfg.sheet_w, height=cfg.sheet_h)
+            if cfg.rotate_page:
+                out_page_front.set_rotation(90)
 
             for row in range(rows):
                 for col in range(cols):
@@ -572,6 +576,8 @@ class ImpositionEngine:
             # 2. RENDERIZAR VERSO DA FOLHA (SE DUPLEX)
             if is_duplex:
                 out_page_back = doc_out.new_page(width=cfg.sheet_w, height=cfg.sheet_h)
+                if cfg.rotate_page:
+                    out_page_back.set_rotation(90)
 
                 for row in range(rows):
                     for col in range(cols):

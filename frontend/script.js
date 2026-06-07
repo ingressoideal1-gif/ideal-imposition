@@ -2870,6 +2870,8 @@ window.runImposition = async function () {
     const start = parseInt(document.getElementById('imp-start').value);
     const end = parseInt(document.getElementById('imp-end').value);
     const schema = document.getElementById('imp-schema').value;
+    const rotateEl = document.getElementById('imp-rotate-page');
+    const rotatePage = rotateEl ? (rotateEl.value === 'true') : false;
 
     if (!fmtId) return toast('Selecione um Formato.', 'error');
     if (!saiId) return toast('Selecione uma Saída.', 'error');
@@ -2921,6 +2923,7 @@ window.runImposition = async function () {
         seq_increment: 1,
         schema,
         print_mode: state.printMode,
+        rotate_page: rotatePage,
         multi_artes: payloadMultiArtes
     };
 
