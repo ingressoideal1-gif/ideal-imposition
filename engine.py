@@ -209,6 +209,8 @@ class ImpositionEngine:
 
     def _load_base_as_pdf(self) -> fitz.Document:
         """Abre o arquivo base (PDF, JPG, PNG) como documento fitz com dimensões físicas precisas."""
+        if not self.cfg.base_file:
+            return None
         f = self.cfg.base_file.lower()
         if f.endswith(".pdf"):
             return fitz.open(self.cfg.base_file)
