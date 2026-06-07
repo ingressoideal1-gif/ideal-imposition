@@ -258,6 +258,7 @@ async def impose_file(
         formato = data.get("formato") or db.get_formato(data.get("formato_id"))
         saida   = data.get("saida") or db.get_saida(data.get("saida_id"))
         numeracao = data.get("numeracao") or (db.get_numeracao(data.get("numeracao_id")) if data.get("numeracao_id") else None)
+        numeracao_2 = data.get("numeracao_2") or (db.get_numeracao(data.get("numeracao_2_id")) if data.get("numeracao_2_id") else None)
 
         if not formato:
             raise HTTPException(status_code=400, detail="Formato não encontrado.")
@@ -301,7 +302,8 @@ async def impose_file(
             seq_increment=data.get("seq_increment", 1),
             layout_schema=data.get("schema", "sequential"),
             csv_data=csv_data,
-            print_mode=data.get("print_mode", "front")
+            print_mode=data.get("print_mode", "front"),
+            numeracao_2=numeracao_2
         )
 
         engine = ImpositionEngine(config)

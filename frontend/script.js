@@ -723,13 +723,13 @@ function populateSelects() {
     }
 
     // Imposição
-    ['imp-formato', 'imp-numeracao', 'imp-saida'].forEach(id => {
+    ['imp-formato', 'imp-numeracao', 'imp-numeracao-2', 'imp-saida'].forEach(id => {
         const sel = document.getElementById(id);
         const cur = sel.value;
         if (id === 'imp-formato') {
             sel.innerHTML = '<option value="">— Selecione —</option>' +
                 state.formatos.map(f => `<option value="${f.id}">${f.name}</option>`).join('');
-        } else if (id === 'imp-numeracao') {
+        } else if (id === 'imp-numeracao' || id === 'imp-numeracao-2') {
             const selectedFmt = document.getElementById('imp-formato')?.value;
             const filteredNums = selectedFmt ? state.numeracoes.filter(n => n.formato_id === selectedFmt) : state.numeracoes;
             sel.innerHTML = '<option value="">— Sem numeração —</option>' +
@@ -2121,6 +2121,8 @@ function drawPreview() {
     if (!fmt || !sai) return;
 
     const num = state.numeracoes.find(n => n.id === numId) || null;
+    const num2Id = document.getElementById('imp-numeracao-2')?.value || '';
+    const num2 = state.numeracoes.find(n => n.id === num2Id) || null;
 
     const MM2PT = 2.8346;
     const sheet_w = sai.width_mm * MM2PT;
@@ -2303,18 +2305,19 @@ function drawPreview() {
                 ctx.fillText(`Posição ${P + 1}`, 0, 0);
             }
 
-            // Elementos variáveis (VDP)
-            if (num && num.elements) {
+            // Elementos vari�veis (VDP) - Suporte a 2 numera��es sobrepostas
+        const drawVdpElements = (currentNum) => {
+            if (currentNum && currentNum.elements) {
                 const val = start + item_index;
-                num.elements.forEach(el => {
-                    // Pular elementos que não são da face ativa
+                currentNum.elements.forEach(el => {
+                    // Pular elementos que n�o s�o da face ativa
                     if (isBack && el.face === 'front') return;
                     if (!isBack && el.face === 'back') return;
-                    // Posição do elemento relativa ao canto superior esquerdo da célula
+                    // Posi��o do elemento relativa ao canto superior esquerdo da c�lula
                     const el_x = el.x_mm * MM2PT * scale;
                     const el_y = el.y_mm * MM2PT * scale;
-                    
-                    // Converter para coordenadas relativas ao centro da célula (0,0)
+
+                    // Converter para coordenadas relativas ao centro da c�lula (0,0)
                     const el_x_rel = el_x - cw / 2;
                     const el_y_rel = el_y - ch / 2;
 
@@ -2378,7 +2381,6 @@ function drawPreview() {
                             if (pattern[i]) ctx.fillRect(i * barW, 0, barW * 0.7, bh);
                         }
 
-                        // Desenhar texto identificando o formato do código de barras
                         ctx.font = `${Math.max(5, bh * 0.3)}px Inter, sans-serif`;
                         ctx.textAlign = 'center';
                         ctx.fillText((el.barcode_format || 'CODE128').toUpperCase(), bw / 2, bh + Math.max(5, bh * 0.35));
@@ -2386,7 +2388,7 @@ function drawPreview() {
                     } else if (el.type === 'SVG') {
                         const sz_w = (el.width_mm || 20) * MM2PT * scale;
                         const sz_h = (el.height_mm || 20) * MM2PT * scale;
-                        const svgImg = num && num._svgImage;
+                        const svgImg = currentNum && currentNum._svgImage;
                         if (svgImg) {
                             ctx.drawImage(svgImg, 0, 0, sz_w, sz_h);
                         } else {
@@ -2403,6 +2405,9 @@ function drawPreview() {
                     ctx.restore();
                 });
             }
+        };
+        drawVdpElements(num);
+        drawVdpElements(num2);
 
             ctx.restore();
         }
@@ -2417,6 +2422,7 @@ function drawPreview() {
 function updateImpSummary() {
     const fmtSelect = document.getElementById('imp-formato');
     const numSelect = document.getElementById('imp-numeracao');
+    const numSelect2 = document.getElementById('imp-numeracao-2');
     const lastFmtId = numSelect.getAttribute('data-last-fmt') || '';
     const currentFmtId = fmtSelect ? fmtSelect.value : '';
 
@@ -2442,6 +2448,8 @@ function updateImpSummary() {
     const box = document.getElementById('imp-summary');
 
     const num = state.numeracoes.find(n => n.id === numId) || null;
+    const num2Id = document.getElementById('imp-numeracao-2')?.value || '';
+    const num2 = state.numeracoes.find(n => n.id === num2Id) || null;
     if (num && num.svg_content && !num._svgImage) {
         const img = new Image();
         img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(num.svg_content);
@@ -2617,13 +2625,18 @@ window.runImposition = async function () {
     const saida = state.saidas.find(s => s.id === saiId);
     const numeracao = numId ? state.numeracoes.find(n => n.id === numId) : null;
 
+    const num2Id = document.getElementById('imp-numeracao-2')?.value || '';
+    const num2 = state.numeracoes.find(n => n.id === num2Id) || null;
+
     const payload = {
         formato_id: fmtId,
         numeracao_id: numId || null,
+        numeracao_2_id: num2Id || null,
         saida_id: saiId,
         formato: formato,
         saida: saida,
         numeracao: numeracao,
+        numeracao_2: num2,
         seq_start: start,
         seq_end: end,
         seq_increment: 1,

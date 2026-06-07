@@ -111,7 +111,8 @@ class ImpositionConfig:
                  seq_increment: int = 1,
                  layout_schema: str = "sequential",
                  csv_data: list[dict] | None = None,
-                 print_mode: str = "front"):
+                 print_mode: str = "front",
+                 numeracao_2: dict | None = None):
 
         self.base_file = base_file
         self.out_pdf = out_pdf
@@ -164,8 +165,25 @@ class ImpositionConfig:
 
         # Elementos VDP da numeração
         self.elements = []
+        
+        # Carregar numeração 1
         if numeracao and "elements" in numeracao:
             for el in numeracao["elements"]:
+                e = dict(el)
+                # Converter mm → pt para todos os campos de posição/tamanho
+                e["_x"] = e.get("x_mm", 0) * MM2PT
+                e["_y"] = e.get("y_mm", 0) * MM2PT
+                if "size_mm" in e:
+                    e["_size"] = e["size_mm"] * MM2PT
+                if "width_mm" in e and e["type"] == "BARCODE":
+                    e["_w"] = e["width_mm"] * MM2PT
+                    e["_h"] = e.get("height_mm", 10) * MM2PT
+                e["face"] = el.get("face", "both")
+                self.elements.append(e)
+
+        # Carregar numeração 2
+        if numeracao_2 and "elements" in numeracao_2:
+            for el in numeracao_2["elements"]:
                 e = dict(el)
                 # Converter mm → pt para todos os campos de posição/tamanho
                 e["_x"] = e.get("x_mm", 0) * MM2PT
