@@ -776,15 +776,16 @@ input[type="color"].form-control {
 
 /* ─── Imposição Layout (Preview) ─── */
 .imposicao-layout {
-    display: grid;
-    grid-template-columns: 1.2fr 1fr;
+    display: flex;
+    flex-direction: column;
     gap: 24px;
-    align-items: start;
+    align-items: stretch;
 }
 
 @media (max-width: 1024px) {
     .imposicao-layout {
-        grid-template-columns: 1fr;
+        display: flex;
+        flex-direction: column;
     }
 }
 
@@ -796,7 +797,7 @@ input[type="color"].form-control {
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     padding: 16px;
-    min-height: 320px;
+    min-height: 600px;
     overflow: auto;
 }
 

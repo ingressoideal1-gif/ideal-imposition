@@ -279,7 +279,17 @@ class ImpositionEngine:
 
         if t in ("TEXT", "FIXED"):
             font_size = el.get("font_size", 12)
-            font_name = el.get("font_name", "helv")
+            raw_font_name = el.get("font_name", "helv")
+            # Mapeamento do frontend para abreviacoes oficiais do Base-14 do PyMuPDF
+            font_map = {
+                "helv": "helv",
+                "helv-bold": "hebo",
+                "times": "tiro",
+                "times-bold": "tibo",
+                "cour": "cour",
+                "cour-bold": "cobo"
+            }
+            font_name = font_map.get(raw_font_name, "helv")
             # Ponto de inserção Y em PyMuPDF é baseline; ajustamos pela font_size
             if angle != 0:
                 # Para rotação, usamos insert_text com morph

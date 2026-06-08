@@ -2339,11 +2339,36 @@ function drawPreview() {
             ctx.lineWidth = 0.5;
             ctx.strokeRect(-cw / 2, -ch / 2, cw, ch);
 
-            if (state.impArtImage || state.impArtPdfDoc) {
-                // Dimensões originais da arte
-                const art_orig_w = state.impArtWidth;
-                const art_orig_h = state.impArtHeight;
+            let multiArteItem = null;
+            if (schema === "multi_artes") {
+                let accumulated = 0;
+                for (let i = 0; i < state.impMultiArtes.length; i++) {
+                    let q = parseInt(state.impMultiArtes[i].qtd) || 0;
+                    if (item_index >= accumulated && item_index < accumulated + q) {
+                        multiArteItem = state.impMultiArtes[i];
+                        break;
+                    }
+                    accumulated += q;
+                }
+            }
 
+            let activePdfDoc = state.impArtPdfDoc;
+            let activeImage = state.impArtImage;
+            let isMultiArtePdf = false;
+            let art_orig_w = state.impArtWidth;
+            let art_orig_h = state.impArtHeight;
+
+            if (schema === "multi_artes" && multiArteItem) {
+                if (multiArteItem.pdfDoc) {
+                    activePdfDoc = multiArteItem.pdfDoc;
+                    isMultiArtePdf = true;
+                    art_orig_w = multiArteItem.artWidth || item_w;
+                    art_orig_h = multiArteItem.artHeight || item_h;
+                }
+                activeImage = null; 
+            }
+
+            if (activeImage || activePdfDoc) {
                 // Centralizar a arte na célula + aplicar offset do formato (em relação ao centro da célula que é 0,0)
                 // (positivo H = direita, positivo V = para cima → negar Y)
                 const offH = fmt_off_h * scale;
@@ -2353,7 +2378,7 @@ function drawPreview() {
                 const dh = art_orig_h * scale;
 
                 if (dw > 0 && dh > 0) {
-                    if (state.impArtPdfDoc) {
+                    if (activePdfDoc) {
                         // Determinar qual página física real do PDF base exibir
                         let pageNum = 1;
                         if (schema === "pdf_multiple") {
@@ -2366,20 +2391,30 @@ function drawPreview() {
                             pageNum = isBack ? 2 : 1;
                         }
 
-                        if (pageNum <= state.impArtPdfDoc.numPages) {
-                            if (!state.impArtPagesCache) state.impArtPagesCache = {};
-                            if (!state.impArtPagesRendering) state.impArtPagesRendering = {};
+                        if (pageNum <= activePdfDoc.numPages) {
+                            let pagesCache = isMultiArtePdf ? multiArteItem.pagesCache : state.impArtPagesCache;
+                            let pagesRendering = isMultiArtePdf ? multiArteItem.pagesRendering : state.impArtPagesRendering;
+                            if (!pagesCache) {
+                                pagesCache = {};
+                                if (isMultiArtePdf) multiArteItem.pagesCache = pagesCache;
+                                else state.impArtPagesCache = pagesCache;
+                            }
+                            if (!pagesRendering) {
+                                pagesRendering = {};
+                                if (isMultiArtePdf) multiArteItem.pagesRendering = pagesRendering;
+                                else state.impArtPagesRendering = pagesRendering;
+                            }
 
                             const cacheKey = `page_${pageNum}`;
-                            const cachedPage = state.impArtPagesCache[cacheKey];
+                            const cachedPage = pagesCache[cacheKey];
                             if (cachedPage) {
                                 ctx.drawImage(cachedPage, offH - dw / 2, offV - dh / 2, dw, dh);
                             } else {
-                                if (!state.impArtPagesRendering[cacheKey]) {
-                                    state.impArtPagesRendering[cacheKey] = true;
+                                if (!pagesRendering[cacheKey]) {
+                                    pagesRendering[cacheKey] = true;
                                     (async () => {
                                         try {
-                                            const page = await state.impArtPdfDoc.getPage(pageNum);
+                                            const page = await activePdfDoc.getPage(pageNum);
                                             const vp = page.getViewport({ scale: 1.5 });
                                             const off = document.createElement('canvas');
                                             off.width = vp.width;
@@ -2389,12 +2424,12 @@ function drawPreview() {
                                             octx.fillRect(0, 0, off.width, off.height);
                                             await page.render({ canvasContext: octx, viewport: vp }).promise;
                                             
-                                            state.impArtPagesCache[cacheKey] = off;
+                                            pagesCache[cacheKey] = off;
                                             drawPreview(); // Redesenhar o preview principal
                                         } catch (err) {
                                             console.error(`Erro ao renderizar pág. ${pageNum}:`, err);
                                         } finally {
-                                            delete state.impArtPagesRendering[cacheKey];
+                                            delete pagesRendering[cacheKey];
                                         }
                                     })();
                                 }
@@ -2419,7 +2454,7 @@ function drawPreview() {
                             ctx.lineWidth = 0.5;
                             ctx.strokeRect(offH - dw / 2, offV - dh / 2, dw, dh);
                         }
-                    } else if (state.impArtImage) {
+                    } else if (activeImage) {
                         if (isBack) {
                             // Imagem única não tem verso de arte
                             ctx.fillStyle = '#ffffff';
@@ -2428,7 +2463,7 @@ function drawPreview() {
                             ctx.lineWidth = 0.5;
                             ctx.strokeRect(offH - dw / 2, offV - dh / 2, dw, dh);
                         } else {
-                            ctx.drawImage(state.impArtImage, 0, 0, state.impArtImage.width, state.impArtImage.height, offH - dw / 2, offV - dh / 2, dw, dh);
+                            ctx.drawImage(activeImage, 0, 0, activeImage.width, activeImage.height, offH - dw / 2, offV - dh / 2, dw, dh);
                         }
                     }
                 }
@@ -2643,12 +2678,32 @@ window.uploadMultiArtePdf = async function(index, fileInput) {
         const url = await uploadToStorage(file, `imposicoes/multi_artes/${Date.now()}_${file.name}`);
         state.impMultiArtes[index].pdf_url = url;
         state.impMultiArtes[index].pdf_name = file.name;
+
+        if (typeof pdfjsLib !== 'undefined') {
+            try {
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                state.impMultiArtes[index].pdfDoc = pdf;
+                state.impMultiArtes[index].pagesCache = {};
+                state.impMultiArtes[index].pagesRendering = {};
+                
+                const page = await pdf.getPage(1);
+                const vp = page.getViewport({ scale: 1 });
+                state.impMultiArtes[index].artWidth = vp.width;
+                state.impMultiArtes[index].artHeight = vp.height;
+            } catch (errPdf) {
+                console.error("Erro ao carregar PDF local para preview Multi-Artes:", errPdf);
+            }
+        }
+
         toast(`PDF da Arte ${index + 1} carregado!`, "success");
     } catch (e) {
         console.error("Erro upload PDF Multi:", e);
         toast("Erro ao fazer upload do PDF.", "error");
     }
     renderMultiArtes();
+    drawPreview();
 };
 
 window.renderMultiArtes = function() {
