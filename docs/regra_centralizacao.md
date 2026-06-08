@@ -60,3 +60,74 @@ out_page.show_pdf_page(rect_art, doc_base, page_idx, clip=page_base.rect)
 
 > [!IMPORTANT]
 > A passagem de `clip=page_base.rect` força o PyMuPDF a isolar a área útil da página de origem e desenhá-la perfeitamente contida no retângulo `rect_art`, eliminando as coordenadas globais deslocadas da origem e centralizando a arte com precisão milimétrica.
+
+---
+
+## 3. Centralização em Imagens Raster (JPG / PNG)
+
+Imagens raster não têm o problema de CropBox, mas precisam ser escalonadas para caber no item sem distorção.
+
+O motor (`_load_base_as_pdf`) cria um PDF temporário em memória com as dimensões exatas do item e insere a imagem proporcialmente:
+
+```python
+# Escala proporcional para caber no item
+scale = min(item_w / img_w, item_h / img_h)
+draw_w = img_w * scale
+draw_h = img_h * scale
+
+# Centralizar no item
+x0 = (item_w - draw_w) / 2
+y0 = (item_h - draw_h) / 2
+
+page.insert_image(fitz.Rect(x0, y0, x0 + draw_w, y0 + draw_h), filename=img_path)
+```
+
+A partir desse ponto, o PDF temporário tem exatamente as dimensões do item e a arte já centralizada — o fluxo de imposição continua identicamente ao de um PDF.
+
+---
+
+## 4. Centralização em Células com Rotação Individual
+
+Quando uma célula tem rotação (90°, 180°, 270°), o motor PyMuPDF aplica a rotação em torno do **centro geométrico** da célula ao chamar `show_pdf_page(..., rotate=angle)`.
+
+Isso funciona corretamente porque a arte já está centralizada no PDF temporário. A rotação não desloca o conteúdo — ele gira em torno do centro da célula.
+
+No **verso em duplex**, a rotação é automaticamente invertida:
+
+```python
+cell_rotation_verso = (360 - cell_rotation_frente) % 360
+```
+
+Isso garante alinhamento cabeça-com-cabeça quando a folha física é virada.
+
+---
+
+## 5. Centralização de Elementos VDP na Célula
+
+Os elementos VDP (TEXT, QR, BARCODE, SVG, PDF) são posicionados **em coordenadas relativas ao canto superior esquerdo do item (0, 0) em mm**.
+
+No backend, antes de renderizar o elemento no PDF temporário do item, as coordenadas mm são convertidas para pt:
+
+```python
+el_x = el.get("x_mm", 0) * MM2PT
+el_y = el.get("y_mm", 0) * MM2PT
+```
+
+Como o PDF temporário já representa exatamente a área do item (sem deslocamento), as coordenadas dos elementos são sempre precisas — mesmo que a arte base tenha tido CropBox deslocado.
+
+No **frontend** (preview), a mesma lógica se aplica:
+
+```javascript
+// Coordenada do elemento relativa ao canto superior esquerdo da célula
+const el_x = el.x_mm * MM2PT * scale;
+const el_y = el.y_mm * MM2PT * scale;
+
+// Converter para coordenadas relativas ao centro da célula (0, 0)
+const el_x_rel = el_x - cw / 2;
+const el_y_rel = el_y - ch / 2;
+
+ctx.translate(el_x_rel, el_y_rel);
+```
+
+O `ctx.save()` / `ctx.translate()` / `ctx.restore()` envolvendo cada elemento garante que a rotação e posição não vazam entre elementos.
+
