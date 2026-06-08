@@ -2357,7 +2357,11 @@ function drawPreview() {
                         // Determinar qual página física real do PDF base exibir
                         let pageNum = 1;
                         if (schema === "pdf_multiple") {
-                            pageNum = isBack ? (item_index * 2 + 2) : (item_index * 2 + 1);
+                            if (state.printMode === "duplex") {
+                                pageNum = isBack ? (item_index * 2 + 2) : (item_index * 2 + 1);
+                            } else {
+                                pageNum = item_index + 1;
+                            }
                         } else {
                             pageNum = isBack ? 2 : 1;
                         }

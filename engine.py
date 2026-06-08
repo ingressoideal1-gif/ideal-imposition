@@ -509,7 +509,10 @@ class ImpositionEngine:
                         # arte_nome = arte_data.get("nome", "") # Nome was removed from multi_artes!
 
                     if cfg.layout_schema == "pdf_multiple":
-                        page_idx_front = (item_index * 2) if current_doc_base and (item_index * 2) < len(current_doc_base) else 0
+                        if is_duplex:
+                            page_idx_front = (item_index * 2) if current_doc_base and (item_index * 2) < len(current_doc_base) else 0
+                        else:
+                            page_idx_front = item_index if current_doc_base and item_index < len(current_doc_base) else 0
                     else:
                         page_idx_front = 0
 
