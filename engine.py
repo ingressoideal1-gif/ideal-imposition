@@ -185,7 +185,10 @@ class ImpositionConfig:
                 if "width_mm" in e and e["type"] == "BARCODE":
                     e["_w"] = e["width_mm"] * MM2PT
                     e["_h"] = e.get("height_mm", 10) * MM2PT
-                e["face"] = el.get("face", "both")
+                if self.print_mode == "duplex":
+                    e["face"] = "front"
+                else:
+                    e["face"] = el.get("face", "both")
                 e["_num_source"] = 1
                 self.elements.append(e)
 
@@ -201,7 +204,10 @@ class ImpositionConfig:
                 if "width_mm" in e and e["type"] == "BARCODE":
                     e["_w"] = e["width_mm"] * MM2PT
                     e["_h"] = e.get("height_mm", 10) * MM2PT
-                e["face"] = el.get("face", "both")
+                if self.print_mode == "duplex":
+                    e["face"] = "back"
+                else:
+                    e["face"] = el.get("face", "both")
                 e["_num_source"] = 2
                 self.elements.append(e)
 
@@ -353,7 +359,7 @@ class ImpositionEngine:
                     drawing = svg2rlg(io.StringIO(svg_data))
                     pdf_bytes = renderPDF.drawToString(drawing)
                     pdf_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-                    page.show_pdf_page(rect, pdf_doc, 0, keep_proportion=True, rotate=angle)
+                    page.show_pdf_page(rect, pdf_doc, 0, keep_proportion=True, rotate=angle, clip=pdf_doc[0].rect)
                 except Exception as ex:
                     print(f"Erro ao impor SVG: {ex}")
 
@@ -379,7 +385,7 @@ class ImpositionEngine:
                         w_pt = pdf_doc[0].rect.width
                         h_pt = pdf_doc[0].rect.height
                     rect = fitz.Rect(el_x, el_y, el_x + w_pt, el_y + h_pt)
-                    page.show_pdf_page(rect, pdf_doc, 0, keep_proportion=True, rotate=angle)
+                    page.show_pdf_page(rect, pdf_doc, 0, keep_proportion=True, rotate=angle, clip=pdf_doc[0].rect)
                 except Exception as ex:
                     print(f"Erro ao impor PDF: {ex}")
 
@@ -433,7 +439,10 @@ class ImpositionEngine:
                         if "width_mm" in e and e["type"] == "SVG":
                             e["width_mm"] = e["width_mm"]
                             e["height_mm"] = e.get("height_mm", 20)
-                        e["face"] = el.get("face", "both")
+                        if cfg.print_mode == "duplex":
+                            e["face"] = "front" if source_id == 1 else "back"
+                        else:
+                            e["face"] = el.get("face", "both")
                         e["_num_source"] = source_id
                         els.append(e)
                 return els
@@ -590,7 +599,8 @@ class ImpositionEngine:
                         temp_doc,
                         0,
                         keep_proportion=True,
-                        rotate=cell_rotation
+                        rotate=cell_rotation,
+                        clip=temp_page.rect
                     )
                     temp_doc.close()
 
@@ -715,7 +725,8 @@ class ImpositionEngine:
                             temp_doc,
                             0,
                             keep_proportion=True,
-                            rotate=cell_rotation
+                            rotate=cell_rotation,
+                            clip=temp_page.rect
                         )
                         temp_doc.close()
 

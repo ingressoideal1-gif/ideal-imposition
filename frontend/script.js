@@ -924,6 +924,37 @@ function editNumeracao(id) {
         const name = document.getElementById('num-pdf-file-name');
         if (btn) btn.style.display = 'inline-flex';
         if (name) name.textContent = '📎 ' + state.numPdfFilename;
+
+        if (typeof pdfjsLib !== 'undefined') {
+            let pdfSrc = state.numPdfContent;
+            if (pdfSrc.startsWith('data:')) {
+                const b64 = pdfSrc.split(',')[1];
+                const binaryString = atob(b64);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                pdfSrc = bytes;
+            }
+            const loadArgs = (typeof pdfSrc === 'string') ? { url: pdfSrc } : { data: pdfSrc };
+            pdfjsLib.getDocument(loadArgs).promise.then(async pdf => {
+                const page = await pdf.getPage(1);
+                const vpRender = page.getViewport({ scale: 2 });
+                const off = document.createElement('canvas');
+                off.width = Math.round(vpRender.width);
+                off.height = Math.round(vpRender.height);
+                await page.render({ canvasContext: off.getContext('2d'), viewport: vpRender }).promise;
+                
+                const img = new Image();
+                img.src = off.toDataURL('image/png');
+                img.onload = () => {
+                    state.numPdfImage = img;
+                    drawCanvas();
+                };
+            }).catch(e => {
+                console.error('Erro preview PDF carregado:', e);
+            });
+        }
     } else {
         if (window.clearNumPdfFile) window.clearNumPdfFile();
     }
@@ -2341,6 +2372,11 @@ function drawPreview() {
             ctx.lineWidth = 0.5;
             ctx.strokeRect(-cw / 2, -ch / 2, cw, ch);
 
+            // Clipping restrito à célula (impede que artes com sangria vazem)
+            ctx.beginPath();
+            ctx.rect(-cw / 2, -ch / 2, cw, ch);
+            ctx.clip();
+
             let multiArteItem = null;
             if (schema === "multi_artes") {
                 let accumulated = 0;
@@ -2485,13 +2521,19 @@ function drawPreview() {
             }
 
             // Elementos variáveis (VDP) - Suporte a 2 numerações sobrepostas
-        const drawVdpElements = (currentNum) => {
+        const drawVdpElements = (currentNum, source_id) => {
             if (currentNum && currentNum.elements) {
                 const val = start + item_index;
                 currentNum.elements.forEach(el => {
+                    const printMode = document.getElementById('imp-print-mode')?.value || 'front';
+                    let effectiveFace = el.face || 'both';
+                    if (printMode === 'duplex') {
+                        effectiveFace = source_id === 1 ? 'front' : 'back';
+                    }
+
                     // Pular elementos que não são da face ativa
-                    if (isBack && el.face === 'front') return;
-                    if (!isBack && el.face === 'back') return;
+                    if (isBack && effectiveFace === 'front') return;
+                    if (!isBack && effectiveFace === 'back') return;
                     // Posição do elemento relativa ao canto superior esquerdo da célula
                     const el_x = el.x_mm * MM2PT * scale;
                     const el_y = el.y_mm * MM2PT * scale;
@@ -2585,8 +2627,8 @@ function drawPreview() {
                 });
             }
         };
-        drawVdpElements(num);
-        drawVdpElements(num2);
+        drawVdpElements(num, 1);
+        drawVdpElements(num2, 2);
 
             ctx.restore();
         }
@@ -2731,13 +2773,13 @@ window.renderMultiArtes = function() {
                 <input type="number" class="form-control" value="${a.qtd}" min="1" oninput="updateMultiArte(${i}, 'qtd', this.value)" style="height:32px; border-color:var(--blue);">
             </div>
             <div style="flex:2">
-                <label style="font-size:0.75rem; color:var(--text-dim); display:block; margin-bottom:4px;">Numeração 1</label>
+                <label style="font-size:0.75rem; color:var(--text-dim); display:block; margin-bottom:4px;">${document.getElementById('imp-print-mode')?.value === 'duplex' ? 'Numeração FRENTE' : 'Numeração 1'}</label>
                 <select class="form-control" style="height:32px; padding:0 5px;" onchange="updateMultiArte(${i}, 'num1_id', this.value)">
                     ${numOptions.replace(`value="${a.num1_id}"`, `value="${a.num1_id}" selected`)}
                 </select>
             </div>
             <div style="flex:2">
-                <label style="font-size:0.75rem; color:var(--text-dim); display:block; margin-bottom:4px;">Numeração 2</label>
+                <label style="font-size:0.75rem; color:var(--text-dim); display:block; margin-bottom:4px;">${document.getElementById('imp-print-mode')?.value === 'duplex' ? 'Numeração VERSO' : 'Numeração 2'}</label>
                 <select class="form-control" style="height:32px; padding:0 5px;" onchange="updateMultiArte(${i}, 'num2_id', this.value)">
                     ${numOptions.replace(`value="${a.num2_id}"`, `value="${a.num2_id}" selected`)}
                 </select>
@@ -2751,21 +2793,51 @@ function updateImpSummary() {
     const fmtSelect = document.getElementById('imp-formato');
     const numSelect = document.getElementById('imp-numeracao');
     const numSelect2 = document.getElementById('imp-numeracao-2');
+
+    const printMode = document.getElementById('imp-print-mode')?.value || 'front';
+    const lblNum1 = document.getElementById('lbl-imp-num-1');
+    const lblNum2 = document.getElementById('lbl-imp-num-2');
+    if (lblNum1 && lblNum2) {
+        if (printMode === 'duplex') {
+            lblNum1.innerHTML = '2. Numeração <b style="color:var(--blue)">FRENTE</b> (opcional)';
+            lblNum2.innerHTML = '3. Numeração <b style="color:var(--blue)">VERSO</b> (opcional)';
+        } else {
+            lblNum1.innerHTML = '2. Numeração 1 (opcional)';
+            lblNum2.innerHTML = '3. Numeração 2 (opcional)';
+        }
+    }
+
+    if (document.getElementById('imp-schema')?.value === 'multi_artes') {
+        renderMultiArtesList();
+    }
+
     const lastFmtId = numSelect.getAttribute('data-last-fmt') || '';
     const currentFmtId = fmtSelect ? fmtSelect.value : '';
 
     if (currentFmtId !== lastFmtId) {
         const curNumVal = numSelect.value;
+        const curNumVal2 = numSelect2 ? numSelect2.value : '';
         const filteredNums = currentFmtId ? state.numeracoes.filter(n => n.formato_id === currentFmtId) : state.numeracoes;
-        numSelect.innerHTML = '<option value="">— Sem numeração —</option>' +
-            filteredNums.map(n => `<option value="${n.id}">${n.name}</option>`).join('');
         
+        const optionsHtml = '<option value="">— Sem numeração —</option>' + 
+            filteredNums.map(n => `<option value="${n.id}">${n.name}</option>`).join('');
+
+        numSelect.innerHTML = optionsHtml;
         if (filteredNums.some(n => n.id === curNumVal)) {
             numSelect.value = curNumVal;
         } else {
             numSelect.value = "";
         }
         numSelect.setAttribute('data-last-fmt', currentFmtId);
+
+        if (numSelect2) {
+            numSelect2.innerHTML = optionsHtml;
+            if (filteredNums.some(n => n.id === curNumVal2)) {
+                numSelect2.value = curNumVal2;
+            } else {
+                numSelect2.value = "";
+            }
+        }
     }
 
     const fmtId = document.getElementById('imp-formato').value;
