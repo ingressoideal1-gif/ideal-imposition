@@ -52,7 +52,8 @@ DEFAULT_DB = {
             "file_format": "pdf"
         }
     ],
-    "cores": []
+    "cores": [],
+    "modelos_imposicao": []
 }
 
 # ─── Internal helpers ──────────────────────────────────────────────────────────
@@ -276,3 +277,43 @@ def delete_cor(cor_id: str):
     db = _get_db()
     db["cores"] = [c for c in db.get("cores", []) if c["id"] != cor_id]
     _save_db(db)
+
+
+# ─── MODELOS DE IMPOSIÇÃO ──────────────────────────────────────────────────────
+
+def get_modelos_imposicao() -> list:
+    return _get_db().get("modelos_imposicao", [])
+
+
+def get_modelo_imposicao(mod_id: str) -> dict | None:
+    for m in get_modelos_imposicao():
+        if m["id"] == mod_id:
+            return m
+    return None
+
+
+def add_modelo_imposicao(data: dict) -> str:
+    db = _get_db()
+    new_id = "mod_" + str(uuid.uuid4())[:8]
+    data["id"] = new_id
+    db.setdefault("modelos_imposicao", []).append(data)
+    _save_db(db)
+    return new_id
+
+
+def update_modelo_imposicao(mod_id: str, data: dict) -> bool:
+    db = _get_db()
+    for i, m in enumerate(db.get("modelos_imposicao", [])):
+        if m["id"] == mod_id:
+            data["id"] = mod_id
+            db["modelos_imposicao"][i] = data
+            _save_db(db)
+            return True
+    return False
+
+
+def delete_modelo_imposicao(mod_id: str):
+    db = _get_db()
+    db["modelos_imposicao"] = [m for m in db.get("modelos_imposicao", []) if m["id"] != mod_id]
+    _save_db(db)
+

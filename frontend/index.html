@@ -41,7 +41,7 @@
 
             <span class="nav-group-label">Configuração</span>
 
-            <button class="nav-btn active" data-view="view-formatos" id="nav-formatos">
+            <button class="nav-btn" data-view="view-formatos" id="nav-formatos">
                 <span class="nav-icon">📐</span>
                 Formatos
             </button>
@@ -82,7 +82,7 @@
 
             <span class="nav-group-label" style="margin-top:8px;">Produção</span>
 
-            <button class="nav-btn" data-view="view-imposicao" id="nav-imposicao">
+            <button class="nav-btn active" data-view="view-imposicao" id="nav-imposicao">
                 <span class="nav-icon">🖨️</span>
                 Imposição
             </button>
@@ -90,6 +90,11 @@
             <button class="nav-btn" data-view="view-amostras" id="nav-amostras">
                 <span class="nav-icon">🧪</span>
                 Amostras
+            </button>
+
+            <button class="nav-btn" data-view="view-lista-imposicao" id="nav-lista-imposicao">
+                <span class="nav-icon">📋</span>
+                Lista de Imposição
             </button>
 
             <span class="nav-group-label admin-only" style="margin-top:8px; display:none;">Administração</span>
@@ -113,7 +118,7 @@
             <!-- ══════════════════════════════════════════════════════════════ -->
             <!-- VIEW: FORMATOS                                                 -->
             <!-- ══════════════════════════════════════════════════════════════ -->
-            <section id="view-formatos" class="view-section active">
+            <section id="view-formatos" class="view-section">
                 <div class="page-header">
                     <div class="page-header-text">
                         <h1>📐 Formatos</h1>
@@ -610,7 +615,7 @@
             <!-- ══════════════════════════════════════════════════════════════ -->
             <!-- VIEW: IMPOSIÇÃO                                                -->
             <!-- ══════════════════════════════════════════════════════════════ -->
-            <section id="view-imposicao" class="view-section" style="max-width: 100%;">
+            <section id="view-imposicao" class="view-section active" style="max-width: 100%;">
                 <div class="page-header">
                     <div class="page-header-text">
                         <h1>🖨️ Imposição</h1>
@@ -641,8 +646,25 @@
                 <div class="imposicao-layout">
                     <div class="imposicao-config">
                         <div class="card">
-                            <div class="card-header">
+                            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
                                 <span class="card-title"><span class="icon">⚙️</span> Configuração da Imposição</span>
+                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                    <select class="form-control" id="imp-modelo-selector" style="width: 180px; padding: 4px 8px; font-size: 0.85rem;" onchange="loadSelectedModelo(this.value)">
+                                        <option value="">— Carregar Modelo —</option>
+                                    </select>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="promptSaveModelo()" style="padding: 4px 10px; font-size: 0.82rem;" title="Criar Modelo de Imposição">💾 Criar Modelo</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="exportOS()" style="padding: 4px 10px; font-size: 0.82rem;" title="Salvar OS localmente no computador">💾 Salvar OS</button>
+                                    <label class="btn btn-secondary btn-sm" for="import-os-file" style="margin: 0; padding: 4px 10px; font-size: 0.82rem; cursor: pointer;" title="Carregar OS salva (.json)">
+                                        📂 Carregar OS
+                                    </label>
+                                    <input type="file" id="import-os-file" accept=".json" style="display: none;" onchange="importOS(this)">
+                                </div>
+                            </div>
+
+                            <!-- Status da OS Ativa -->
+                            <div id="active-os-status" style="display: none; font-size: 0.82rem; color: var(--text-dim); background: rgba(255,255,255,0.04); padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--border); margin: 0 0 16px 0; justify-content: space-between; align-items: center; gap: 10px;">
+                                <span>📋 OS Ativa: <strong id="active-os-name" style="color: var(--blue);">Nenhuma</strong></span>
+                                <button type="button" class="btn btn-ghost btn-sm btn-danger" onclick="clearActiveOS()" style="padding: 2px 8px; font-size: 0.75rem; margin: 0;">✕ Limpar OS</button>
                             </div>
 
                             <div class="form-grid form-grid-4" style="margin-bottom:20px;">
@@ -913,6 +935,40 @@
                                 <p style="font-size: 0.85rem; font-weight: 500;">Selecione uma numeração para visualizar.</p>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ══════════════════════════════════════════════════════════════ -->
+            <!-- VIEW: LISTA DE IMPOSIÇÃO                                       -->
+            <!-- ══════════════════════════════════════════════════════════════ -->
+            <section id="view-lista-imposicao" class="view-section">
+                <div class="page-header" style="flex-wrap: wrap;">
+                    <div class="page-header-text">
+                        <h1>📋 Modelos de Imposição</h1>
+                        <p>Gerencie seus modelos de imposição cadastrados no sistema.</p>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title"><span class="icon">📋</span> Modelos Cadastrados</span>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Nome do Modelo</th>
+                                <th>Formato</th>
+                                <th>Saída</th>
+                                <th>Regra de Paginação</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-modelos-imposicao"></tbody>
+                    </table>
+                    <div class="empty-state" id="empty-modelos-imposicao" style="display:none">
+                        <div class="empty-state-icon">📋</div>
+                        <p>Nenhum modelo cadastrado ainda.</p>
                     </div>
                 </div>
             </section>

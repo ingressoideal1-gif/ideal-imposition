@@ -240,6 +240,38 @@ def delete_cor(cor_id: str, user: dict = Depends(get_current_user)):
     db.delete_cor(cor_id)
     return {"status": "success"}
 
+# ─── MODELOS DE IMPOSIÇÃO ──────────────────────────────────────────────────────
+
+@app.get("/api/modelos_imposicao")
+def list_modelos_imposicao(user: dict = Depends(get_current_user)):
+    return db.get_modelos_imposicao()
+
+@app.get("/api/modelos_imposicao/{mod_id}")
+def get_modelo_imposicao(mod_id: str, user: dict = Depends(get_current_user)):
+    m = db.get_modelo_imposicao(mod_id)
+    if not m:
+        raise HTTPException(status_code=404, detail="Modelo de imposição não encontrado")
+    return m
+
+@app.post("/api/modelos_imposicao")
+async def create_modelo_imposicao(request: Request, user: dict = Depends(get_current_user)):
+    data = await request.json()
+    new_id = db.add_modelo_imposicao(data)
+    return {"id": new_id, "status": "success"}
+
+@app.put("/api/modelos_imposicao/{mod_id}")
+async def update_modelo_imposicao(mod_id: str, request: Request, user: dict = Depends(get_current_user)):
+    data = await request.json()
+    ok = db.update_modelo_imposicao(mod_id, data)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Modelo de imposição não encontrado")
+    return {"status": "success"}
+
+@app.delete("/api/modelos_imposicao/{mod_id}")
+def delete_modelo_imposicao(mod_id: str, user: dict = Depends(get_current_user)):
+    db.delete_modelo_imposicao(mod_id)
+    return {"status": "success"}
+
 # ─── IMPOSIÇÃO ────────────────────────────────────────────────────────────────
 
 @app.post("/api/impose")
@@ -419,4 +451,4 @@ async def submit_print_job(
 if __name__ == "__main__":
     import uvicorn
     db.init_db()
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True, reload_excludes=["venv/*"])
+    uvicorn.run("app:app", host="0.0.0.0", port=8080, reload=True, reload_excludes=["venv/*"])

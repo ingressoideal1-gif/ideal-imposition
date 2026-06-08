@@ -208,6 +208,17 @@ class ImpositionConfig:
 class ImpositionEngine:
     def __init__(self, config: ImpositionConfig):
         self.cfg = config
+        self._url_cache = {}
+
+    def _get_url_bytes(self, url: str) -> bytes:
+        if url in self._url_cache:
+            return self._url_cache[url]
+        import urllib.request
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = response.read()
+            self._url_cache[url] = data
+            return data
 
     def _load_base_as_pdf(self) -> fitz.Document:
         """Abre o arquivo base (PDF, JPG, PNG) como documento fitz com dimensões físicas precisas."""
@@ -320,13 +331,12 @@ class ImpositionEngine:
                 rect = fitz.Rect(el_x, el_y, el_x + w_pt, el_y + h_pt)
                 try:
                     import io
-                    import urllib.request
                     from svglib.svglib import svg2rlg
                     from reportlab.graphics import renderPDF
                     
                     if svg_content.startswith("http"):
-                        req = urllib.request.urlopen(svg_content)
-                        svg_data = req.read().decode("utf-8")
+                        svg_bytes = self._get_url_bytes(svg_content)
+                        svg_data = svg_bytes.decode("utf-8")
                     else:
                         svg_data = svg_content
 
@@ -342,11 +352,9 @@ class ImpositionEngine:
             if pdf_content:
                 try:
                     import base64
-                    import urllib.request
                     
                     if pdf_content.startswith("http"):
-                        req = urllib.request.urlopen(pdf_content)
-                        pdf_bytes = req.read()
+                        pdf_bytes = self._get_url_bytes(pdf_content)
                     else:
                         if pdf_content.startswith("data:"):
                             pdf_content = pdf_content.split(",", 1)[-1]

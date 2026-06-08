@@ -27,6 +27,7 @@ const state = {
     numeracoes: [],
     saidas: [],
     cores: [],
+    modelosImposicao: [],
     fmtRotations: {}, // mapeia índice de célula -> ângulo (0, 90, 180, 270)
     fmtSelectedCellIndex: null, // índice da célula selecionada no preview
     printMode: "front",
@@ -54,6 +55,8 @@ const state = {
     numCsvHeaders: [],
     numCsvData: null,
     numCsvFilename: "",
+    loadedOSName: "",
+    expectedArteName: "",
 };
 
 // ─── Utility — Toast ─────────────────────────────────────────────────────────
@@ -81,7 +84,7 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
 // ─── API Helpers ──────────────────────────────────────────────────────────────
 async function api(method, path, body = null) {
     // Se o Firebase estiver ativo e for rota de banco de dados
-    if (typeof dbFirebase !== 'undefined' && dbFirebase && (path.startsWith('/formatos') || path.startsWith('/numeracoes') || path.startsWith('/saidas') || path.startsWith('/cores'))) {
+    if (typeof dbFirebase !== 'undefined' && dbFirebase && (path.startsWith('/formatos') || path.startsWith('/numeracoes') || path.startsWith('/saidas') || path.startsWith('/cores') || path.startsWith('/modelos_imposicao'))) {
         const parts = path.substring(1).split('/');
         const col = parts[0];
         const docId = parts[1] || null;
@@ -146,16 +149,18 @@ async function api(method, path, body = null) {
 // ─── Load All Data ────────────────────────────────────────────────────────────
 async function loadAll() {
     try {
-        const [fmts, nums, sais, cores] = await Promise.all([
+        const [fmts, nums, sais, cores, modelos] = await Promise.all([
             api('GET', '/formatos'),
             api('GET', '/numeracoes'),
             api('GET', '/saidas'),
             api('GET', '/cores').catch(() => []),
+            api('GET', '/modelos_imposicao').catch(() => []),
         ]);
         state.formatos = fmts;
         state.numeracoes = nums;
         state.saidas = sais;
         state.cores = cores || [];
+        state.modelosImposicao = modelos || [];
         renderAll();
     } catch (e) {
         toast('Erro ao carregar dados: ' + e.message, 'error');
@@ -167,6 +172,7 @@ function renderAll() {
     renderNumeracoes();
     renderSaidas();
     renderCores();
+    renderModelosImposicao();
     updateBadges();
     populateSelects();
 }
@@ -745,6 +751,15 @@ function populateSelects() {
             else sel.value = '';
         }
     });
+
+    // Modelos de Imposição Selector
+    const selModelo = document.getElementById('imp-modelo-selector');
+    if (selModelo) {
+        const curMod = selModelo.value;
+        selModelo.innerHTML = '<option value="">— Carregar Modelo —</option>' +
+            (state.modelosImposicao || []).map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+        if (curMod) selModelo.value = curMod;
+    }
 
     // Amostras
     const selAmCor = document.getElementById('amostra-cor');
@@ -2852,6 +2867,20 @@ impFile.addEventListener('change', showFileInfo);
 function showFileInfo() {
     if (impFile.files.length) {
         const f = impFile.files[0];
+
+        // Validação da OS Ativa
+        if (state.expectedArteName && f.name !== state.expectedArteName) {
+            toast(`Erro: O arquivo selecionado "${f.name}" não coincide com a arte esperada pela OS ("${state.expectedArteName}").`, 'error');
+            impFile.value = ''; // Reseta input
+            
+            // Restaura o aviso
+            if (impInfo) {
+                impInfo.innerHTML = `<span style="color: var(--blue); font-weight: bold;">⚠️ Selecione o arquivo novamente:</span> "${state.expectedArteName}"`;
+                impInfo.style.display = 'block';
+            }
+            return;
+        }
+
         const kb = (f.size / 1024).toFixed(0);
         impInfo.textContent = `✅ ${f.name} (${kb} KB)`;
         impInfo.style.display = 'block';
@@ -2893,8 +2922,34 @@ window.runImposition = async function () {
 
     const formato = state.formatos.find(f => f.id === fmtId);
     const saida = state.saidas.find(s => s.id === saiId);
-    const numeracao = numId ? state.numeracoes.find(n => n.id === numId) : null;
 
+    // 1. SOLICITAR DESTINO DO ARQUIVO IMEDIATAMENTE (dentro do clique do usuário para manter o gesto ativo)
+    let fileHandle = null;
+    const suffix = schema === "pdf_multiple" ? "Paginado" : `${start}-${end}`;
+    const defaultFilename = `VDP_${formato.name.replace(/\s+/g, '_')}_${suffix}.pdf`;
+
+    if (window.showSaveFilePicker) {
+        try {
+            const options = {
+                suggestedName: defaultFilename,
+                types: [{
+                    description: 'PDF Document',
+                    accept: {
+                        'application/pdf': ['.pdf'],
+                    },
+                }],
+            };
+            fileHandle = await window.showSaveFilePicker(options);
+        } catch (err) {
+            // Se o usuário cancelou o diálogo de salvamento, interrompe o processo antes de chamar o servidor
+            if (err.name === 'AbortError') {
+                return;
+            }
+            console.error("Erro ao abrir showSaveFilePicker no início:", err);
+        }
+    }
+
+    const numeracao = numId ? state.numeracoes.find(n => n.id === numId) : null;
     const num2Id = document.getElementById('imp-numeracao-2')?.value || '';
     const num2 = state.numeracoes.find(n => n.id === num2Id) || null;
 
@@ -2972,7 +3027,17 @@ window.runImposition = async function () {
         };
     }
 
-    let progressInterval = null;
+    let progress = 0;
+    let progressInterval = setInterval(() => {
+        if (progress < 90) {
+            const increment = Math.max(1, Math.floor((90 - progress) * 0.1));
+            progress += increment;
+        } else if (progress < 98) {
+            progress += 0.5;
+        }
+        if (pBar) pBar.style.width = `${progress}%`;
+        if (pText) pText.textContent = `Processando... (${Math.floor(progress)}%)`;
+    }, 300);
 
     try {
         let baseUrl = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : '';
@@ -3026,15 +3091,34 @@ window.runImposition = async function () {
             throw new Error(err.detail || 'Erro no servidor');
         }
         const blob = await res.blob();
+        
+        // Salvar os dados na pasta e arquivo já escolhidos pelo usuário
+        if (fileHandle) {
+            try {
+                const writable = await fileHandle.createWritable();
+                await writable.write(blob);
+                await writable.close();
+                toast('PDF salvo com sucesso!', 'success');
+                return;
+            } catch (err) {
+                console.error("Falha ao salvar no arquivo escolhido previamente, usando fallback:", err);
+            }
+        }
+
+        // Fallback: Prompt para nome do arquivo + download convencional
+        const filename = prompt('Digite o nome do arquivo para salvar o PDF:', defaultFilename);
+        if (filename === null) return; // cancelado pelo usuário
+        
+        const finalFilename = filename.trim() || defaultFilename;
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `VDP_${start}-${end}_${Date.now()}.pdf`;
+        a.download = finalFilename.endsWith('.pdf') ? finalFilename : finalFilename + '.pdf';
         document.body.appendChild(a);
         a.click();
         URL.revokeObjectURL(url);
         document.body.removeChild(a);
-        toast('PDF gerado com sucesso!', 'success');
+        toast('PDF baixado com sucesso!', 'success');
     } catch (err) {
         if (err.name === 'AbortError') {
             toast('Geração do PDF cancelada pelo usuário.', 'info');
@@ -3042,8 +3126,13 @@ window.runImposition = async function () {
             toast(`Erro: ${err.message}`, 'error');
         }
     } finally {
-        overlay.classList.remove('active');
-        document.getElementById('btn-impose').disabled = false;
+        if (progressInterval) clearInterval(progressInterval);
+        if (pBar) pBar.style.width = '100%';
+        if (pText) pText.textContent = 'Concluído! (100%)';
+        setTimeout(() => {
+            overlay.classList.remove('active');
+            document.getElementById('btn-impose').disabled = false;
+        }, 400);
         impositionAbortController = null;
     }
 };;
@@ -4383,4 +4472,306 @@ window.setPreviewFace = function (face) {
     }
     drawPreview();
 };
+
+// ─── MODELOS DE IMPOSIÇÃO E OS ────────────────────────────────────────────────
+async function renderModelosImposicao() {
+    const tbody = document.getElementById('tbody-modelos-imposicao');
+    const empty = document.getElementById('empty-modelos-imposicao');
+    if (!tbody) return;
+
+    if (!state.modelosImposicao || !state.modelosImposicao.length) {
+        tbody.innerHTML = '';
+        if (empty) empty.style.display = 'block';
+        return;
+    }
+    if (empty) empty.style.display = 'none';
+
+    tbody.innerHTML = state.modelosImposicao.map(m => {
+        const fmt = state.formatos.find(f => f.id === m.formato_id);
+        const fmtName = fmt ? fmt.name : 'Não selecionado';
+        const sai = state.saidas.find(s => s.id === m.saida_id);
+        const saiName = sai ? sai.name : 'Não selecionado';
+        
+        let schemaName = m.schema || 'sequential';
+        if (schemaName === 'sequential') schemaName = 'Sequencial';
+        else if (schemaName === 'cut_stack') schemaName = 'Cut & Stack';
+        else if (schemaName === 'step_repeat') schemaName = 'Step & Repeat';
+        else if (schemaName === 'pdf_multiple') schemaName = 'Pdf Paginado';
+        else if (schemaName === 'multi_artes') schemaName = 'Multi-Artes';
+
+        return `
+            <tr>
+                <td><strong>${m.name || 'Sem nome'}</strong></td>
+                <td>${fmtName}</td>
+                <td>${saiName}</td>
+                <td><span class="badge badge-blue">${schemaName}</span></td>
+                <td class="actions-cell">
+                    <button class="btn btn-sm btn-ghost" onclick="loadSelectedModelo('${m.id}')" title="Carregar este modelo no painel">📂 Carregar</button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteModeloImposicao('${m.id}')" title="Excluir este modelo">🗑️</button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+window.renderModelosImposicao = renderModelosImposicao;
+
+async function deleteModeloImposicao(modId) {
+    if (!confirm('Excluir este modelo de imposição?')) return;
+    try {
+        await api('DELETE', `/modelos_imposicao/${modId}`);
+        toast('Modelo excluído com sucesso!', 'success');
+        await loadAll();
+    } catch (e) {
+        toast('Erro ao excluir modelo: ' + e.message, 'error');
+    }
+}
+window.deleteModeloImposicao = deleteModeloImposicao;
+
+async function promptSaveModelo() {
+    const name = prompt('Digite o nome do novo modelo de imposição:');
+    if (!name || !name.trim()) return;
+
+    const config = getImposicaoConfigData();
+    if (!config.formato_id) {
+        return toast('Selecione ao menos um Formato antes de salvar o modelo.', 'error');
+    }
+
+    const payload = {
+        name: name.trim(),
+        ...config
+    };
+
+    try {
+        const res = await api('POST', '/modelos_imposicao', payload);
+        toast('Modelo de imposição criado com sucesso!', 'success');
+        await loadAll();
+        // Atualizar o seletor para o novo modelo
+        const selector = document.getElementById('imp-modelo-selector');
+        if (selector) selector.value = res.id;
+    } catch (e) {
+        toast('Erro ao salvar modelo: ' + e.message, 'error');
+    }
+}
+window.promptSaveModelo = promptSaveModelo;
+
+async function loadSelectedModelo(modId) {
+    if (!modId) return;
+    const m = state.modelosImposicao.find(x => x.id === modId);
+    if (!m) return toast('Modelo não encontrado.', 'error');
+
+    // Preencher campos
+    const setSelectVal = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.value = val || '';
+            el.dispatchEvent(new Event('change'));
+        }
+    };
+
+    setSelectVal('imp-formato', m.formato_id);
+    
+    populateSelects();
+
+    setSelectVal('imp-numeracao', m.numeracao_id);
+    setSelectVal('imp-numeracao-2', m.numeracao_2_id);
+    setSelectVal('imp-saida', m.saida_id);
+
+    if (document.getElementById('imp-start')) document.getElementById('imp-start').value = m.start_num || 1;
+    if (document.getElementById('imp-end')) document.getElementById('imp-end').value = m.end_num || 100;
+    
+    setSelectVal('imp-schema', m.schema);
+    setSelectVal('imp-print-mode', m.print_mode);
+    setSelectVal('imp-rotate-page', m.rotate_page ? 'true' : 'false');
+
+    if (m.schema === 'multi_artes' && m.multi_artes) {
+        state.impMultiArtes = JSON.parse(JSON.stringify(m.multi_artes));
+        if (window.renderMultiArtesList) window.renderMultiArtesList();
+        if (window.toggleMultiArtes) window.toggleMultiArtes();
+    }
+
+    updateImpSummary();
+    toast(`Modelo "${m.name}" carregado com sucesso!`, 'success');
+}
+window.loadSelectedModelo = loadSelectedModelo;
+
+function getImposicaoConfigData() {
+    const fileInput = document.getElementById('imp-file');
+    const filename = fileInput && fileInput.files && fileInput.files.length > 0 ? fileInput.files[0].name : '';
+    return {
+        formato_id: document.getElementById('imp-formato')?.value || '',
+        numeracao_id: document.getElementById('imp-numeracao')?.value || '',
+        numeracao_2_id: document.getElementById('imp-numeracao-2')?.value || '',
+        saida_id: document.getElementById('imp-saida')?.value || '',
+        start_num: parseInt(document.getElementById('imp-start')?.value) || 1,
+        end_num: parseInt(document.getElementById('imp-end')?.value) || 100,
+        schema: document.getElementById('imp-schema')?.value || 'sequential',
+        print_mode: document.getElementById('imp-print-mode')?.value || 'front',
+        rotate_page: document.getElementById('imp-rotate-page')?.value === 'true',
+        multi_artes: (document.getElementById('imp-schema')?.value === 'multi_artes') ? state.impMultiArtes : [],
+        arte_filename: filename
+    };
+}
+
+async function exportOS() {
+    const config = getImposicaoConfigData();
+    if (!config.formato_id) {
+        return toast('Selecione um formato para exportar a OS.', 'error');
+    }
+
+    const defaultFilename = `os_imposicao_${config.formato_id}.json`;
+    const jsonString = JSON.stringify(config, null, 2);
+
+    // Tenta usar a API File System Access se disponível (permite escolher pasta e renomear)
+    if (window.showSaveFilePicker) {
+        try {
+            const options = {
+                suggestedName: defaultFilename,
+                types: [{
+                    description: 'JSON Files',
+                    accept: {
+                        'application/json': ['.json'],
+                    },
+                }],
+            };
+            const handle = await window.showSaveFilePicker(options);
+            const writable = await handle.createWritable();
+            await writable.write(jsonString);
+            await writable.close();
+            toast('Ordem de Serviço (OS) salva com sucesso!', 'success');
+            return;
+        } catch (err) {
+            // Se o usuário cancelou o diálogo, não faz nada
+            if (err.name === 'AbortError') {
+                return;
+            }
+            console.error("Falha ao usar showSaveFilePicker, usando fallback:", err);
+        }
+    }
+
+    // Fallback: Prompt para nome do arquivo + download convencional
+    const filename = prompt('Digite o nome do arquivo para salvar a OS:', defaultFilename);
+    if (filename === null) return; // cancelado pelo usuário
+    
+    const finalFilename = filename.trim() || defaultFilename;
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(jsonString);
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute("href", dataStr);
+    downloadAnchor.setAttribute("download", finalFilename.endsWith('.json') ? finalFilename : finalFilename + '.json');
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+    toast('Ordem de Serviço (OS) exportada localmente!', 'success');
+}
+window.exportOS = exportOS;
+
+function importOS(input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const config = JSON.parse(e.target.result);
+            if (!config.formato_id) {
+                throw new Error('Arquivo JSON inválido. Campo formato_id obrigatório.');
+            }
+
+            const setSelectVal = (id, val) => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.value = val || '';
+                    el.dispatchEvent(new Event('change'));
+                }
+            };
+
+            setSelectVal('imp-formato', config.formato_id);
+            populateSelects();
+
+            setSelectVal('imp-numeracao', config.numeracao_id);
+            setSelectVal('imp-numeracao-2', config.numeracao_2_id);
+            setSelectVal('imp-saida', config.saida_id);
+
+            if (document.getElementById('imp-start')) document.getElementById('imp-start').value = config.start_num || 1;
+            if (document.getElementById('imp-end')) document.getElementById('imp-end').value = config.end_num || 100;
+            
+            setSelectVal('imp-schema', config.schema);
+            setSelectVal('imp-print-mode', config.print_mode);
+            setSelectVal('imp-rotate-page', config.rotate_page ? 'true' : 'false');
+
+            if (config.schema === 'multi_artes' && config.multi_artes) {
+                state.impMultiArtes = JSON.parse(JSON.stringify(config.multi_artes));
+                if (window.renderMultiArtesList) window.renderMultiArtesList();
+                if (window.toggleMultiArtes) window.toggleMultiArtes();
+            }
+
+            updateImpSummary();
+
+            // Gravar o estado da OS ativa
+            state.loadedOSName = file.name;
+            state.expectedArteName = config.arte_filename || '';
+
+            // Atualizar o elemento visual
+            const activeOsStatus = document.getElementById('active-os-status');
+            const activeOsName = document.getElementById('active-os-name');
+            if (activeOsStatus && activeOsName) {
+                activeOsName.textContent = file.name;
+                activeOsStatus.style.display = 'flex';
+            }
+
+            const fileInput = document.getElementById('imp-file');
+            if (fileInput) {
+                fileInput.value = ''; // Limpa arquivo antigo
+            }
+            
+            const infoEl = document.getElementById('imp-file-info');
+            if (config.arte_filename) {
+                if (infoEl) {
+                    infoEl.innerHTML = `<span style="color: var(--blue); font-weight: bold;">⚠️ Selecione o arquivo novamente:</span> "${config.arte_filename}"`;
+                    infoEl.style.display = 'block';
+                }
+                // Marcar o passo 4 como ativo para guiar o usuário
+                document.getElementById('step-4')?.classList.add('active');
+                toast(`OS "${file.name}" carregada! Lembre-se de selecionar o arquivo de arte: "${config.arte_filename}"`, 'info');
+            } else {
+                if (infoEl) {
+                    infoEl.style.display = 'none';
+                    infoEl.textContent = '';
+                }
+                toast(`OS "${file.name}" carregada com sucesso!`, 'success');
+            }
+        } catch (err) {
+            toast('Erro ao importar OS: ' + err.message, 'error');
+        } finally {
+            input.value = '';
+        }
+    };
+    reader.readAsText(file);
+}
+window.importOS = importOS;
+
+function clearActiveOS() {
+    state.loadedOSName = "";
+    state.expectedArteName = "";
+    
+    const activeOsStatus = document.getElementById('active-os-status');
+    const activeOsName = document.getElementById('active-os-name');
+    if (activeOsStatus && activeOsName) {
+        activeOsName.textContent = "Nenhuma";
+        activeOsStatus.style.display = 'none';
+    }
+
+    const infoEl = document.getElementById('imp-file-info');
+    if (infoEl) {
+        infoEl.style.display = 'none';
+        infoEl.textContent = '';
+    }
+
+    const fileInput = document.getElementById('imp-file');
+    if (fileInput) {
+        fileInput.value = '';
+    }
+
+    toast('OS desvinculada. Validações de arquivo liberadas.', 'info');
+}
+window.clearActiveOS = clearActiveOS;
 
