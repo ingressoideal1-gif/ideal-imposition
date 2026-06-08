@@ -221,7 +221,7 @@ class ImpositionEngine:
             return self._url_cache[url]
         import urllib.request
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=5) as response:
+        with urllib.request.urlopen(req, timeout=30) as response:
             data = response.read()
             self._url_cache[url] = data
             return data
@@ -368,9 +368,19 @@ class ImpositionEngine:
             if pdf_content:
                 try:
                     import base64
+                    import traceback
+                    
+                    content_preview = pdf_content[:120] if isinstance(pdf_content, str) else f"[tipo: {type(pdf_content).__name__}]"
+                    print(f"[engine] Elemento PDF: preview={content_preview!r}")
+                    
+                    if not isinstance(pdf_content, str) or not pdf_content.strip():
+                        print(f"[engine] Elemento PDF ignorado — pdf_content inválido")
+                        return
                     
                     if pdf_content.startswith("http"):
+                        print(f"[engine] Baixando PDF da URL: {pdf_content[:80]}...")
                         pdf_bytes = self._get_url_bytes(pdf_content)
+                        print(f"[engine] PDF baixado: {len(pdf_bytes)} bytes")
                     else:
                         if pdf_content.startswith("data:"):
                             pdf_content = pdf_content.split(",", 1)[-1]
@@ -386,8 +396,14 @@ class ImpositionEngine:
                         h_pt = pdf_doc[0].rect.height
                     rect = fitz.Rect(el_x, el_y, el_x + w_pt, el_y + h_pt)
                     page.show_pdf_page(rect, pdf_doc, 0, keep_proportion=True, rotate=angle, clip=pdf_doc[0].rect)
+                    pdf_doc.close()
+                    print(f"[engine] Elemento PDF renderizado OK em rect={rect}")
                 except Exception as ex:
-                    print(f"Erro ao impor PDF: {ex}")
+                    print(f"[engine] ERRO ao impor elemento PDF: {ex}")
+                    traceback.print_exc()
+            else:
+                print(f"[engine] Elemento PDF sem pdf_content — ignorado")
+
 
     def process(self):
         cfg = self.cfg

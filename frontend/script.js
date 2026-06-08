@@ -936,6 +936,10 @@ function editNumeracao(id) {
                 }
                 pdfSrc = bytes;
             }
+            if (typeof pdfSrc === 'string' && pdfSrc.startsWith('http')) {
+                const baseUrl = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : '';
+                pdfSrc = `${baseUrl}/api/proxy?url=${encodeURIComponent(pdfSrc)}`;
+            }
             const loadArgs = (typeof pdfSrc === 'string') ? { url: pdfSrc } : { data: pdfSrc };
             pdfjsLib.getDocument(loadArgs).promise.then(async pdf => {
                 const page = await pdf.getPage(1);
@@ -1327,6 +1331,7 @@ function hitTest(el, mx, my) {
     else if (el.type === 'QR') { w = el.size_mm || 15; h = w; }
     else if (el.type === 'BARCODE') { w = el.width_mm || 40; h = el.height_mm || 10; }
     else if (el.type === 'SVG') { w = el.width_mm || 20; h = el.height_mm || 20; }
+    else if (el.type === 'PDF') { w = el.width_mm || 20; h = el.height_mm || 20; }
 
     return mx >= ex - 2 && mx <= ex + w + 2 && my >= ey - 2 && my <= ey + h + 2;
 }
@@ -1698,7 +1703,8 @@ async function loadNumPdfFile(file) {
             const octx = off.getContext('2d');
             off.width = Math.round(vpRender.width);
             off.height = Math.round(vpRender.height);
-            await page.render({ canvasContext: octx, viewport: vpRender }).promise;
+            // background: 'rgba(0,0,0,0)' garante que o PDF.js não preencha o canvas com branco
+            await page.render({ canvasContext: octx, viewport: vpRender, background: 'rgba(0,0,0,0)' }).promise;
             
             const img = new Image();
             img.src = off.toDataURL('image/png');
@@ -2622,6 +2628,75 @@ function drawPreview() {
                             ctx.fillText('SVG', sz_w / 2, sz_h / 2 + (sz_h * 0.05));
                             ctx.textAlign = 'left';
                         }
+                    } else if (el.type === 'PDF') {
+                        const sz_w = (el.width_mm || 20) * MM2PT * scale;
+                        const sz_h = (el.height_mm || 20) * MM2PT * scale;
+                        if (el._pdfCanvas) {
+                            // Já carregado: desenhar diretamente
+                            ctx.drawImage(el._pdfCanvas, 0, 0, sz_w, sz_h);
+                        } else if (el.pdf_content && !el._pdfLoading) {
+                            // Carregar assincronamente e cachear no próprio elemento
+                            el._pdfLoading = true;
+                            (async () => {
+                                try {
+                                    let pdfData;
+                                    const content = el.pdf_content;
+                                    if (content.startsWith('http')) {
+                                        const baseUrl = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : '';
+                                        const resp = await fetch(`${baseUrl}/api/proxy?url=${encodeURIComponent(content)}`);
+                                        pdfData = await resp.arrayBuffer();
+                                    } else {
+                                        const b64 = content.includes('base64,') ? content.split('base64,')[1] : content;
+                                        const binStr = atob(b64);
+                                        const bytes = new Uint8Array(binStr.length);
+                                        for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
+                                        pdfData = bytes.buffer;
+                                    }
+                                    const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+                                    const page = await pdf.getPage(1);
+                                    const vp = page.getViewport({ scale: 2 });
+                                    const offCanvas = document.createElement('canvas');
+                                    offCanvas.width = Math.round(vp.width);
+                                    offCanvas.height = Math.round(vp.height);
+                                    const octx = offCanvas.getContext('2d');
+                                    // background: 'rgba(0,0,0,0)' impede o PDF.js de preencher o fundo com branco
+                                    await page.render({ canvasContext: octx, viewport: vp, background: 'rgba(0,0,0,0)' }).promise;
+                                    el._pdfCanvas = offCanvas;
+                                    delete el._pdfLoading;
+                                    drawPreview(); // redesenhar o preview após carregar
+                                } catch (errPdf) {
+                                    console.error('[Preview] Erro ao renderizar PDF do elemento VDP:', errPdf);
+                                    delete el._pdfLoading;
+                                }
+                            })();
+                            // Placeholder enquanto carrega
+                            ctx.fillStyle = '#f1f5f9';
+                            ctx.fillRect(0, 0, sz_w, sz_h);
+                            ctx.strokeStyle = '#94a3b8';
+                            ctx.lineWidth = 0.5;
+                            ctx.strokeRect(0, 0, sz_w, sz_h);
+                            ctx.fillStyle = '#64748b';
+                            ctx.font = `${Math.max(5, sz_h * 0.18)}px Inter, sans-serif`;
+                            ctx.textAlign = 'center';
+                            ctx.textBaseline = 'middle';
+                            ctx.fillText('PDF...', sz_w / 2, sz_h / 2);
+                            ctx.textAlign = 'left';
+                            ctx.textBaseline = 'alphabetic';
+                        } else if (!el.pdf_content) {
+                            // Sem conteúdo: placeholder vazio
+                            ctx.fillStyle = '#f8fafc';
+                            ctx.fillRect(0, 0, sz_w, sz_h);
+                            ctx.strokeStyle = '#94a3b8';
+                            ctx.lineWidth = 0.5;
+                            ctx.strokeRect(0, 0, sz_w, sz_h);
+                            ctx.fillStyle = '#94a3b8';
+                            ctx.font = `${Math.max(5, sz_h * 0.18)}px Inter, sans-serif`;
+                            ctx.textAlign = 'center';
+                            ctx.textBaseline = 'middle';
+                            ctx.fillText('📄 PDF', sz_w / 2, sz_h / 2);
+                            ctx.textAlign = 'left';
+                            ctx.textBaseline = 'alphabetic';
+                        }
                     }
                     ctx.restore();
                 });
@@ -2858,6 +2933,49 @@ function updateImpSummary() {
             drawPreview();
         };
     }
+    // Pré-carregar canvas de cada elemento PDF da numeração selecionada
+    function preloadNumPdfElements(numeracao) {
+        if (!numeracao || !numeracao.elements) return;
+        numeracao.elements.forEach(el => {
+            if (el.type === 'PDF' && el.pdf_content && !el._pdfCanvas && !el._pdfLoading) {
+                el._pdfLoading = true;
+                (async () => {
+                    try {
+                        let pdfData;
+                        const content = el.pdf_content;
+                        if (content.startsWith('http')) {
+                            const baseUrl = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : '';
+                            const resp = await fetch(`${baseUrl}/api/proxy?url=${encodeURIComponent(content)}`);
+                            pdfData = await resp.arrayBuffer();
+                        } else {
+                            const b64 = content.includes('base64,') ? content.split('base64,')[1] : content;
+                            const binStr = atob(b64);
+                            const bytes = new Uint8Array(binStr.length);
+                            for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
+                            pdfData = bytes.buffer;
+                        }
+                        const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+                        const page = await pdf.getPage(1);
+                        const vp = page.getViewport({ scale: 2 });
+                        const offCanvas = document.createElement('canvas');
+                        offCanvas.width = Math.round(vp.width);
+                        offCanvas.height = Math.round(vp.height);
+                        const octx = offCanvas.getContext('2d');
+                        // background: 'rgba(0,0,0,0)' impede o PDF.js de preencher o fundo com branco
+                        await page.render({ canvasContext: octx, viewport: vp, background: 'rgba(0,0,0,0)' }).promise;
+                        el._pdfCanvas = offCanvas;
+                        delete el._pdfLoading;
+                        drawPreview();
+                    } catch (err) {
+                        console.error('[Preview] Erro pré-carregando PDF do elemento:', err);
+                        delete el._pdfLoading;
+                    }
+                })();
+            }
+        });
+    }
+    preloadNumPdfElements(num);
+    preloadNumPdfElements(num2);
     const schema = document.getElementById('imp-schema').value;
     const isPdfMultiple = (schema === "pdf_multiple");
 
@@ -3122,7 +3240,14 @@ window.runImposition = async function () {
     if (state.csvFile) {
         formData.append('csv_file', state.csvFile);
     }
-    formData.append('payload', JSON.stringify(payload));
+    formData.append('payload', JSON.stringify(payload, (key, value) => {
+        // Filtrar propriedades internas do frontend (não-serializáveis ou irrelevantes ao backend)
+        if (key === '_svgImage' || key === '_pdfPreview' || key === '_pdfCanvas' || key === '_pdfLoading' ||
+            key === 'pdfDoc' || key === 'pagesCache' || key === 'pagesRendering') {
+            return undefined;
+        }
+        return value;
+    }));
 
     const overlay = document.getElementById('loading-overlay');
     const sub = document.getElementById('loading-sub');
@@ -3175,32 +3300,51 @@ window.runImposition = async function () {
     try {
         let baseUrl = typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : '';
         
-        // Verifica se o Agente Local está ativo para processar a imposição localmente de forma instantânea (com timeout de 300ms)
-        let localActive = false;
+        // 1. Verificar primeiro se o servidor FastAPI principal está rodando localmente (porta 8080)
+        let localApiActive = false;
         try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 300);
-            
-            const agentCheck = await fetch("http://localhost:9000/", { 
+            const controller8080 = new AbortController();
+            const timeoutId8080 = setTimeout(() => controller8080.abort(), 500);
+            const apiCheck = await fetch("http://localhost:8080/api/formatos", { 
                 method: "GET",
-                signal: controller.signal 
+                signal: controller8080.signal 
             }).catch(() => null);
-            
-            clearTimeout(timeoutId);
-            
-            if (agentCheck && agentCheck.ok) {
-                const checkData = await agentCheck.json().catch(() => ({}));
-                if (checkData.status === "running") {
-                    localActive = true;
-                }
+            clearTimeout(timeoutId8080);
+            if (apiCheck && (apiCheck.ok || apiCheck.status === 401 || apiCheck.status === 403)) {
+                localApiActive = true;
             }
         } catch (_) {}
 
-        if (localActive) {
+        // 2. Verificar se o Agente Local (porta 9000) está ativo
+        let localActive = false;
+        if (!localApiActive) {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 300);
+                const agentCheck = await fetch("http://localhost:9000/", { 
+                    method: "GET",
+                    signal: controller.signal 
+                }).catch(() => null);
+                clearTimeout(timeoutId);
+                if (agentCheck && agentCheck.ok) {
+                    const checkData = await agentCheck.json().catch(() => ({}));
+                    if (checkData.status === "running") {
+                        localActive = true;
+                    }
+                }
+            } catch (_) {}
+        }
+
+        if (localApiActive) {
+            baseUrl = "http://localhost:8080";
+            console.log("[Imposition] ✅ Servidor local (porta 8080) detectado — processando localmente para máxima velocidade");
+            if (sub) sub.textContent = `Gerando ${total.toLocaleString('pt-BR')} itens... (Servidor Local)`;
+        } else if (localActive) {
             baseUrl = "http://localhost:9000";
-            console.log("[Imposition] Processando localmente na máquina do usuário para máxima velocidade");
+            console.log("[Imposition] Processando via agente local (porta 9000)");
         } else {
             console.log("[Imposition] Processando na nuvem (Render)");
+            if (sub) sub.textContent = `Gerando ${total.toLocaleString('pt-BR')} itens... (Aguardando servidor na nuvem...)`;
         }
         
         const headers = {};
