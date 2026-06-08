@@ -803,7 +803,7 @@ input[type="color"].form-control {
 
 #preview-canvas {
     background: #ffffff;
-    max-width: 100%;
+    max-width: none; /* Permite que o canvas cresça e o container crie scroll */
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
     border: 1px solid var(--border-glow);
     display: block;

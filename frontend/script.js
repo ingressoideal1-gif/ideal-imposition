@@ -2272,8 +2272,8 @@ function drawPreview() {
     const fmt_off_h = (fmt.offset_h_mm || 0) * MM2PT;
     const fmt_off_v = (fmt.offset_v_mm || 0) * MM2PT;
 
-    const MAX_W = 960;
-    const MAX_H = 680;
+    const MAX_W = 1440;
+    const MAX_H = 1020;
     const scale = Math.min(MAX_W / sheet_w, MAX_H / sheet_h);
 
     canvas.width = Math.round(sheet_w * scale);
