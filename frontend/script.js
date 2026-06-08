@@ -2272,12 +2272,14 @@ function drawPreview() {
     const fmt_off_h = (fmt.offset_h_mm || 0) * MM2PT;
     const fmt_off_v = (fmt.offset_v_mm || 0) * MM2PT;
 
-    const MAX_W = 1440;
-    const MAX_H = 1020;
+    const MAX_W = 1920;
+    const MAX_H = 1360;
     const scale = Math.min(MAX_W / sheet_w, MAX_H / sheet_h);
 
     canvas.width = Math.round(sheet_w * scale);
     canvas.height = Math.round(sheet_h * scale);
+    canvas.style.width = `${canvas.width}px`;
+    canvas.style.height = `${canvas.height}px`;
 
     // Fundo branco do papel
     ctx.fillStyle = '#ffffff';
@@ -2636,7 +2638,7 @@ window.addMultiArte = function() {
     state.impMultiArtes.push({
         pdf_url: null,
         pdf_name: '',
-        qtd: 100,
+        qtd: 1,
         num1_id: '',
         num2_id: ''
     });
